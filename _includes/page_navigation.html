@@ -1,0 +1,179 @@
+{% if page.nav_order %}
+<nav class="page-nav" aria-label="Page navigation">
+  <div class="page-nav-content">
+    {% assign pages = site.html_pages | where_exp: "item", "item.nav_order" | sort: "nav_order" %}
+    {% assign current_index = -1 %}
+
+    {% for item in pages %}
+      {% if item.url == page.url %}
+        {% assign current_index = forloop.index0 %}
+        {% break %}
+      {% endif %}
+    {% endfor %}
+
+    {% if current_index >= 0 %}
+      {% assign prev_index = current_index | minus: 1 %}
+      {% assign next_index = current_index | plus: 1 %}
+
+      <div class="page-nav-buttons">
+        {% if prev_index >= 0 %}
+          {% assign prev_page = pages[prev_index] %}
+          <a href="{{ prev_page.url | relative_url }}" class="page-nav-button page-nav-prev">
+            <span class="page-nav-arrow">←</span>
+            <div class="page-nav-label">
+              <div class="page-nav-direction">Previous</div>
+              <div class="page-nav-title">{{ prev_page.title }}</div>
+            </div>
+          </a>
+        {% else %}
+          <div class="page-nav-spacer"></div>
+        {% endif %}
+
+        {% if next_index < pages.size %}
+          {% assign next_page = pages[next_index] %}
+          <a href="{{ next_page.url | relative_url }}" class="page-nav-button page-nav-next">
+            <div class="page-nav-label">
+              <div class="page-nav-direction">Next</div>
+              <div class="page-nav-title">{{ next_page.title }}</div>
+            </div>
+            <span class="page-nav-arrow">→</span>
+          </a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+</nav>
+
+<style>
+.page-nav {
+  margin-top: 4rem;
+  padding-top: 2rem;
+  border-top: 1px solid #d0d7de;
+}
+
+.page-nav-buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.page-nav-button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background-color: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  flex: 1;
+  max-width: 45%;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-color: #0969da;
+  }
+}
+
+.page-nav-prev {
+  justify-content: flex-start;
+}
+
+.page-nav-next {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.page-nav-spacer {
+  flex: 1;
+  max-width: 45%;
+}
+
+.page-nav-arrow {
+  font-size: 1.25rem;
+  color: #656d76;
+  transition: color 0.15s ease;
+}
+
+.page-nav-button:hover .page-nav-arrow {
+  color: #0969da;
+}
+
+.page-nav-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.page-nav-direction {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #656d76;
+}
+
+.page-nav-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #1f2328;
+}
+
+.page-nav-button:hover .page-nav-title {
+  color: #0969da;
+}
+
+/* Dark mode styles */
+[data-theme="dark"] .page-nav {
+  border-top-color: #30363d;
+}
+
+[data-theme="dark"] .page-nav-button {
+  background-color: #161b22;
+  border-color: #30363d;
+
+  &:hover {
+    border-color: #58a6ff;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+  }
+}
+
+[data-theme="dark"] .page-nav-arrow {
+  color: #8b949e;
+}
+
+[data-theme="dark"] .page-nav-button:hover .page-nav-arrow {
+  color: #58a6ff;
+}
+
+[data-theme="dark"] .page-nav-direction {
+  color: #8b949e;
+}
+
+[data-theme="dark"] .page-nav-title {
+  color: #e6edf3;
+}
+
+[data-theme="dark"] .page-nav-button:hover .page-nav-title {
+  color: #58a6ff;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .page-nav-buttons {
+    flex-direction: column;
+  }
+
+  .page-nav-button,
+  .page-nav-spacer {
+    max-width: 100%;
+  }
+
+  .page-nav-next {
+    margin-left: 0;
+  }
+}
+</style>
+{% endif %}
