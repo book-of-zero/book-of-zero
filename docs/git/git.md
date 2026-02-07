@@ -1,7 +1,7 @@
 ---
-layout: page
+layout: default
 title: "Git: a practical workflow"
-categories: [git, versioning, workflow]
+nav_order: 2
 ---
 
 Git is the backbone of collaborative development. It also protects reproducibility: you can point to an exact state of code, configs, and decisions that produced a result.

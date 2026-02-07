@@ -1,13 +1,14 @@
 ---
-layout: page
+layout: home
 title: Book of Zero
 permalink: /
+nav_order: 1
 ---
 
 Practical notes for building solid foundations in Data, AI, and engineering.
 
 ## Topics
 
-- [Git workflow]({{ "/docs/git/git/" | relative_url }})
-- [Docker]({{ "/docs/docker/docker/" | relative_url }})
+- [Git workflow]({% link docs/git/git.md %})
+- [Docker]({% link docs/docker/docker.md %})
 

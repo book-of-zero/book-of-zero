@@ -4,9 +4,30 @@ description: Practical notes for engineering foundations.
 # Project Pages (org: book-of-zero, repo: book-of-zero)
 baseurl: "/book-of-zero"
 
-theme: minima
+theme: just-the-docs
+color_scheme: hightech
+
 markdown: kramdown
 permalink: pretty
+
+# Search
+search_enabled: true
+search.heading_level: 3
+search.previews: 3
+search.preview_words_before: 5
+search.preview_words_after: 10
+search.tokenizer_separator: /[\s/]+/
+
+# Navigation
+heading_anchors: true
+back_to_top: true
+back_to_top_text: "Back to top"
+
+# Aux links (top-right)
+aux_links:
+  "GitHub":
+    - "https://github.com/averriest/book-of-zero"
+aux_links_new_tab: true
 
 exclude:
   - README.md
@@ -14,7 +35,6 @@ exclude:
   - Gemfile.lock
   - node_modules
   - vendor
-  # Publish only Git + Docker for now
-  - docs/genai
-  - docs/mlops
-
+  - drafts
+  - CLAUDE.md
+  - .claude

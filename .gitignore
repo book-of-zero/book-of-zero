@@ -1,2 +1,8 @@
 CLAUDE.md
 drafts/
+.claude/
+_site/
+.jekyll-cache/
+.jekyll-metadata
+.bundle/
+vendor/

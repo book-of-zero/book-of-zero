@@ -1,0 +1,113 @@
+// ── Font smoothing ──────────────────────────────────────────────
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// ── Headings ────────────────────────────────────────────────────
+.main-content {
+  h1, h2, h3, h4, h5, h6 {
+    color: #e6edf3;
+    letter-spacing: -0.01em;
+  }
+
+  h1 {
+    border-bottom: 2px solid rgba(#00d4ff, 0.3);
+    padding-bottom: 0.4em;
+  }
+
+  h2 {
+    border-bottom: 1px solid rgba(#00d4ff, 0.15);
+    padding-bottom: 0.3em;
+  }
+}
+
+// ── Links ───────────────────────────────────────────────────────
+.main-content a {
+  transition: color 0.15s ease;
+
+  &:hover {
+    color: #00e5a0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+// ── Code blocks ─────────────────────────────────────────────────
+.main-content {
+  code {
+    font-family: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+    font-size: 0.85em;
+  }
+
+  div.highlighter-rouge,
+  figure.highlight {
+    border-radius: 8px;
+    border: 1px solid #21262d;
+  }
+
+  pre.highlight {
+    border-radius: 8px;
+  }
+}
+
+// ── Sidebar ─────────────────────────────────────────────────────
+.side-bar {
+  border-right: 1px solid #21262d;
+
+  .nav-list-item {
+    .nav-list-link.active {
+      color: #00d4ff;
+      border-left: 3px solid #00d4ff;
+      font-weight: 600;
+    }
+  }
+}
+
+// ── Search ──────────────────────────────────────────────────────
+.search-input {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+
+  &:focus {
+    border-color: rgba(#00d4ff, 0.5);
+    box-shadow: 0 0 0 3px rgba(#00d4ff, 0.15);
+  }
+}
+
+// ── Tables ──────────────────────────────────────────────────────
+.main-content table {
+  border-radius: 8px;
+  overflow: hidden;
+
+  th {
+    background-color: #1a2332;
+    color: #e6edf3;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+}
+
+// ── Scrollbar (webkit) ──────────────────────────────────────────
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f1419;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #21262d;
+  border-radius: 4px;
+
+  &:hover {
+    background: #30363d;
+  }
+}
+
+// ── Text selection ──────────────────────────────────────────────
+::selection {
+  background: rgba(#00d4ff, 0.25);
+  color: #e6edf3;
+}
