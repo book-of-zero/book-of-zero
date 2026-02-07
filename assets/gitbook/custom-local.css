@@ -1,0 +1,89 @@
+/* Book of Zero overrides: code blocks + copy button UI */
+
+/* ──────────────────────────────────────────────────────────────
+   Code blocks: better contrast + spacing
+   (Token colors come from `syntax_highlighter_style: github`.)
+   ────────────────────────────────────────────────────────────── */
+
+.markdown-section pre {
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #f8fafc;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+}
+
+.markdown-section pre code {
+  font-size: 0.9em;
+  line-height: 1.55;
+  color: #0f172a; /* avoid washed-out gray */
+}
+
+/* Inline code: subtle but readable */
+.markdown-section :not(pre) > code {
+  background: rgba(2, 6, 23, 0.06);
+  border: 1px solid rgba(2, 6, 23, 0.08);
+  border-radius: 6px;
+  padding: 0.15em 0.35em;
+  color: #0f172a;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Copy button: icon-only (GitBook-ish), shows on hover/focus
+   ────────────────────────────────────────────────────────────── */
+
+.markdown-section pre {
+  position: relative;
+}
+
+.boz-copy-code {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(2, 6, 23, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(2, 6, 23, 0.75);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease, background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.markdown-section pre:hover .boz-copy-code,
+.boz-copy-code:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.boz-copy-code:hover {
+  background: #ffffff;
+  border-color: rgba(9, 105, 218, 0.28);
+  color: #0969da;
+}
+
+.boz-copy-code:focus-visible {
+  outline: 3px solid rgba(9, 105, 218, 0.25);
+  outline-offset: 2px;
+}
+
+.boz-copy-code svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.boz-copy-code[data-state="copied"] {
+  color: #1a7f37;
+  border-color: rgba(26, 127, 55, 0.28);
+}
+
+.boz-copy-code[data-state="error"] {
+  color: #cf222e;
+  border-color: rgba(207, 34, 46, 0.28);
+}
+

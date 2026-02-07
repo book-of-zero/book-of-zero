@@ -14,6 +14,9 @@ kramdown:
   toc_levels: 1..6
   syntax_highlighter: rouge
 
+# Syntax highlighting theme (ships with jekyll-gitbook)
+syntax_highlighter_style: github
+
 # Keep pretty URLs for root pages; collections handle their own permalinks below.
 permalink: pretty
 
