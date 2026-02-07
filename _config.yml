@@ -1,0 +1,20 @@
+title: Book of Zero
+description: Practical notes for engineering foundations.
+
+# Project Pages (org: book-of-zero, repo: book-of-zero)
+baseurl: "/book-of-zero"
+
+theme: minima
+markdown: kramdown
+permalink: pretty
+
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  # Publish only Git + Docker for now
+  - docs/genai
+  - docs/mlops
+

@@ -8,6 +8,6 @@ Practical notes for building solid foundations in Data, AI, and engineering.
 
 ## Topics
 
-- [Git workflow](/docs/git/git)
-- [Docker](/docs/docker/docker)
+- [Git workflow]({{ "/docs/git/git/" | relative_url }})
+- [Docker]({{ "/docs/docker/docker/" | relative_url }})
 
