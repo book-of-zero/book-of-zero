@@ -5,7 +5,7 @@ description: Practical notes for engineering foundations.
 baseurl: "/book-of-zero"
 
 theme: just-the-docs
-color_scheme: hightech
+color_scheme: gitbook
 
 markdown: kramdown
 permalink: pretty

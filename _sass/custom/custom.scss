@@ -1,3 +1,7 @@
+// ════════════════════════════════════════════════════════════════
+// GitBook-inspired theme — base styling (light mode default)
+// ════════════════════════════════════════════════════════════════
+
 // ── Font smoothing ──────────────────────────────────────────────
 body {
   -webkit-font-smoothing: antialiased;
@@ -7,27 +11,30 @@ body {
 // ── Headings ────────────────────────────────────────────────────
 .main-content {
   h1, h2, h3, h4, h5, h6 {
-    color: #e6edf3;
+    color: #1f2328;
     letter-spacing: -0.01em;
+    font-weight: 600;
   }
 
   h1 {
-    border-bottom: 2px solid rgba(#00d4ff, 0.3);
+    border-bottom: 1px solid #d0d7de;
     padding-bottom: 0.4em;
   }
 
   h2 {
-    border-bottom: 1px solid rgba(#00d4ff, 0.15);
+    border-bottom: 1px solid #d0d7de;
     padding-bottom: 0.3em;
   }
 }
 
 // ── Links ───────────────────────────────────────────────────────
 .main-content a {
+  color: #0969da;
+  text-decoration: none;
   transition: color 0.15s ease;
 
   &:hover {
-    color: #00e5a0;
+    color: #0550ae;
     text-decoration: underline;
     text-underline-offset: 3px;
   }
@@ -40,50 +47,93 @@ body {
     font-size: 0.85em;
   }
 
+  // Inline code
+  p code,
+  li code,
+  td code,
+  h1 code, h2 code, h3 code, h4 code, h5 code, h6 code {
+    background-color: #eff1f3;
+    padding: 0.15em 0.4em;
+    border-radius: 6px;
+    font-size: 0.85em;
+  }
+
+  // Fenced code blocks
   div.highlighter-rouge,
   figure.highlight {
+    background-color: #f6f8fa;
+    border: 1px solid #d0d7de;
     border-radius: 8px;
-    border: 1px solid #21262d;
+    margin-bottom: 1em;
   }
 
   pre.highlight {
+    background-color: #f6f8fa;
     border-radius: 8px;
+    padding: 1em;
   }
 }
 
 // ── Sidebar ─────────────────────────────────────────────────────
 .side-bar {
-  border-right: 1px solid #21262d;
+  background-color: #f6f8fa;
+  border-right: 1px solid #d0d7de;
+
+  .site-title {
+    color: #1f2328;
+  }
 
   .nav-list-item {
-    .nav-list-link.active {
-      color: #00d4ff;
-      border-left: 3px solid #00d4ff;
-      font-weight: 600;
+    .nav-list-link {
+      color: #1f2328;
+
+      &:hover {
+        color: #0969da;
+        background-color: rgba(9, 105, 218, 0.06);
+      }
+
+      &.active {
+        color: #0969da;
+        border-left: 3px solid #0969da;
+        font-weight: 600;
+        background-color: rgba(9, 105, 218, 0.06);
+      }
     }
   }
 }
 
+.site-header {
+  border-bottom: 1px solid #d0d7de;
+  background-color: #f6f8fa;
+}
+
 // ── Search ──────────────────────────────────────────────────────
 .search-input {
+  background-color: #ffffff;
+  border: 1px solid #d0d7de;
+  color: #1f2328;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 
   &:focus {
-    border-color: rgba(#00d4ff, 0.5);
-    box-shadow: 0 0 0 3px rgba(#00d4ff, 0.15);
+    border-color: #0969da;
+    box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
   }
 }
 
 // ── Tables ──────────────────────────────────────────────────────
 .main-content table {
+  border-collapse: collapse;
   border-radius: 8px;
   overflow: hidden;
 
+  th, td {
+    border: 1px solid #d0d7de;
+  }
+
   th {
-    background-color: #1a2332;
-    color: #e6edf3;
+    background-color: #f6f8fa;
+    color: #1f2328;
     font-weight: 600;
-    letter-spacing: 0.02em;
   }
 }
 
@@ -94,20 +144,392 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f1419;
+  background: #ffffff;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #21262d;
+  background: #d0d7de;
   border-radius: 4px;
 
   &:hover {
-    background: #30363d;
+    background: #afb8c1;
   }
 }
 
 // ── Text selection ──────────────────────────────────────────────
 ::selection {
-  background: rgba(#00d4ff, 0.25);
-  color: #e6edf3;
+  background: rgba(9, 105, 218, 0.2);
+  color: #1f2328;
+}
+
+// ── Theme toggle button ─────────────────────────────────────────
+.theme-toggle-wrapper {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid #d0d7de;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  color: #656d76;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    color: #1f2328;
+    border-color: #afb8c1;
+    background-color: rgba(0, 0, 0, 0.04);
+  }
+
+  .icon-moon {
+    display: none;
+  }
+
+  .icon-sun {
+    display: block;
+  }
+}
+
+// In dark mode: show moon, hide sun
+[data-theme="dark"] .theme-toggle {
+  .icon-sun {
+    display: none;
+  }
+
+  .icon-moon {
+    display: block;
+  }
+}
+
+// ── Breadcrumbs / aux links ─────────────────────────────────────
+.aux-nav .aux-nav-list-item a {
+  color: #656d76;
+
+  &:hover {
+    color: #0969da;
+  }
+}
+
+// ── Back to top ─────────────────────────────────────────────────
+.main-content .back-to-top {
+  color: #656d76;
+
+  &:hover {
+    color: #0969da;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Dark mode overrides via [data-theme="dark"]
+// ════════════════════════════════════════════════════════════════
+
+[data-theme="dark"] {
+  // ── Body & layout ───────────────────────────────────────────
+  body,
+  &,
+  .main-content-wrap,
+  .main-content {
+    background-color: #0d1117;
+    color: #e6edf3;
+  }
+
+  .side-bar {
+    background-color: #161b22;
+    border-right-color: #30363d;
+  }
+
+  .site-header {
+    background-color: #161b22;
+    border-bottom-color: #30363d;
+  }
+
+  // ── Headings ──────────────────────────────────────────────────
+  .main-content {
+    h1, h2, h3, h4, h5, h6 {
+      color: #e6edf3;
+    }
+
+    h1, h2 {
+      border-bottom-color: #30363d;
+    }
+  }
+
+  // ── Text & links ──────────────────────────────────────────────
+  .main-content p,
+  .main-content li,
+  .main-content td,
+  .main-content dd {
+    color: #e6edf3;
+  }
+
+  .main-content a {
+    color: #58a6ff;
+
+    &:hover {
+      color: #79c0ff;
+    }
+  }
+
+  // ── Sidebar nav ───────────────────────────────────────────────
+  .side-bar {
+    .site-title {
+      color: #e6edf3;
+    }
+
+    .nav-list-item .nav-list-link {
+      color: #e6edf3;
+
+      &:hover {
+        color: #58a6ff;
+        background-color: rgba(88, 166, 255, 0.08);
+      }
+
+      &.active {
+        color: #58a6ff;
+        border-left-color: #58a6ff;
+        background-color: rgba(88, 166, 255, 0.08);
+      }
+    }
+  }
+
+  // ── Search ────────────────────────────────────────────────────
+  .search-input {
+    background-color: #161b22;
+    border-color: #30363d;
+    color: #e6edf3;
+
+    &:focus {
+      border-color: #58a6ff;
+      box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+    }
+  }
+
+  .search-results {
+    background-color: #161b22;
+    border-color: #30363d;
+  }
+
+  .search-result-title {
+    color: #e6edf3;
+  }
+
+  .search-result-preview {
+    color: #8b949e;
+  }
+
+  .search-result-rel-url {
+    color: #8b949e;
+  }
+
+  // ── Code ──────────────────────────────────────────────────────
+  .main-content {
+    // Inline code
+    p code,
+    li code,
+    td code,
+    h1 code, h2 code, h3 code, h4 code, h5 code, h6 code {
+      background-color: #262c36;
+      color: #e6edf3;
+    }
+
+    // Fenced code blocks
+    div.highlighter-rouge,
+    figure.highlight {
+      background-color: #161b22;
+      border-color: #30363d;
+    }
+
+    pre.highlight {
+      background-color: #161b22;
+      color: #e6edf3;
+    }
+
+    code {
+      color: #e6edf3;
+    }
+  }
+
+  // ── Tables ────────────────────────────────────────────────────
+  .main-content table {
+    th, td {
+      border-color: #30363d;
+    }
+
+    th {
+      background-color: #161b22;
+      color: #e6edf3;
+    }
+
+    td {
+      background-color: #0d1117;
+      color: #e6edf3;
+    }
+
+    tr:nth-child(even) td {
+      background-color: #161b22;
+    }
+  }
+
+  // ── Theme toggle ──────────────────────────────────────────────
+  .theme-toggle-wrapper {
+    border-top-color: #30363d;
+  }
+
+  .theme-toggle {
+    border-color: #30363d;
+    color: #8b949e;
+
+    &:hover {
+      color: #e6edf3;
+      border-color: #484f58;
+      background-color: rgba(255, 255, 255, 0.06);
+    }
+  }
+
+  // ── Aux links / breadcrumbs ───────────────────────────────────
+  .aux-nav .aux-nav-list-item a {
+    color: #8b949e;
+
+    &:hover {
+      color: #58a6ff;
+    }
+  }
+
+  .main-content .back-to-top {
+    color: #8b949e;
+
+    &:hover {
+      color: #58a6ff;
+    }
+  }
+
+  // ── Scrollbar ─────────────────────────────────────────────────
+  ::-webkit-scrollbar-track {
+    background: #0d1117;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #30363d;
+
+    &:hover {
+      background: #484f58;
+    }
+  }
+
+  // ── Text selection ────────────────────────────────────────────
+  ::selection {
+    background: rgba(88, 166, 255, 0.25);
+    color: #e6edf3;
+  }
+
+  // ── Breadcrumb nav ────────────────────────────────────────────
+  .breadcrumb-nav-list-item a {
+    color: #8b949e;
+
+    &:hover {
+      color: #58a6ff;
+    }
+  }
+
+  // ── Footer ────────────────────────────────────────────────────
+  .site-footer {
+    color: #8b949e;
+    border-top-color: #30363d;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Rouge syntax highlighting — GitHub dark theme
+  // ════════════════════════════════════════════════════════════════
+  .highlight {
+    .c, .c1, .cm, .cs, .cp {   // Comments
+      color: #8b949e;
+      font-style: italic;
+    }
+
+    .k, .kd, .kn, .kp, .kr, .kv, .kt, .kc {  // Keywords
+      color: #ff7b72;
+    }
+
+    .s, .s1, .s2, .sb, .sc, .sh, .sx {  // Strings
+      color: #a5d6ff;
+    }
+
+    .si {  // String interpolation
+      color: #a5d6ff;
+    }
+
+    .sr {  // Regex
+      color: #7ee787;
+    }
+
+    .n, .na, .nb, .nc, .no, .nd, .ni, .ne, .nf, .nl, .nn, .nt, .nv {  // Names
+      color: #e6edf3;
+    }
+
+    .nc, .nd, .ne {  // Class, decorator, exception
+      color: #ffa657;
+    }
+
+    .nf {  // Function
+      color: #d2a8ff;
+    }
+
+    .nt {  // Tag
+      color: #7ee787;
+    }
+
+    .na {  // Attribute
+      color: #79c0ff;
+    }
+
+    .nb {  // Builtin
+      color: #ffa657;
+    }
+
+    .m, .mi, .mf, .mh, .mo, .mb, .mx, .il {  // Numbers
+      color: #79c0ff;
+    }
+
+    .o, .ow {  // Operators
+      color: #ff7b72;
+    }
+
+    .p {  // Punctuation
+      color: #e6edf3;
+    }
+
+    .gd {  // Deleted
+      color: #ffa198;
+      background-color: rgba(248, 81, 73, 0.15);
+    }
+
+    .gi {  // Inserted
+      color: #7ee787;
+      background-color: rgba(63, 185, 80, 0.15);
+    }
+
+    .gh, .gu {  // Heading, subheading
+      color: #79c0ff;
+      font-weight: 600;
+    }
+
+    .ge {  // Emphasis
+      font-style: italic;
+    }
+
+    .gs {  // Strong
+      font-weight: 700;
+    }
+
+    .err {  // Error
+      color: #ffa198;
+    }
+  }
 }
