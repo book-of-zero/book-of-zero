@@ -1,0 +1,32 @@
+services:
+  myapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PACKAGE_NAME: ${PACKAGE_NAME:-myapp}
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+        UID: ${UID:-90001}
+    image: myapp:dev
+    env_file:
+      - .env
+    environment:
+      ENVIRONMENT: dev
+      PORT: ${PORT:-8080}
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    command: ["/app/.venv/bin/python", "main.py"]
+    restart: unless-stopped
+    init: true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/app/.venv/bin/python",
+          "-c",
+          "import os, socket; port=int(os.getenv('PORT','8080')); addrs=[ai[4][0] for ai in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)]; addrs=[a for a in addrs if not a.startswith('127.')]; host=(addrs[0] if addrs else '127.0.0.1'); s=socket.socket(); s.settimeout(2); s.connect((host, port)); s.close()",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s

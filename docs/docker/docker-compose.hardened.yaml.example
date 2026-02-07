@@ -1,0 +1,14 @@
+services:
+  myapp:
+    environment:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+      XDG_CONFIG_HOME: /tmp/.config
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m
+      - /app/logs:rw,nosuid,nodev,noexec,size=64m

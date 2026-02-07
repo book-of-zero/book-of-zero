@@ -1,0 +1,72 @@
+# syntax=docker/dockerfile:1
+
+ARG PYTHON_VERSION=3.13
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:latest
+ARG UID=90001
+ARG PACKAGE_NAME=myapp
+ARG BUILD_DATE=""
+ARG VCS_REF=""
+ARG VCS_URL=""
+
+FROM ${UV_IMAGE} AS uv
+
+FROM python:${PYTHON_VERSION}-slim AS builder
+COPY --from=uv /uv /uvx /bin/
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project --no-editable
+
+COPY pyproject.toml uv.lock ./
+COPY ${PACKAGE_NAME} ./${PACKAGE_NAME}
+COPY main.py ./
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-editable
+
+FROM python:${PYTHON_VERSION}-slim
+
+ARG UID
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VCS_URL
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="${VCS_URL}"
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    appuser
+
+WORKDIR /app
+
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+COPY --from=builder --chown=appuser:appuser /app/${PACKAGE_NAME} /app/${PACKAGE_NAME}
+COPY --from=builder --chown=appuser:appuser /app/main.py /app/main.py
+
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app/logs
+
+USER appuser
+
+ENV ENVIRONMENT=dev
+ENV LOG_LEVEL=INFO
+ENV PORT=8080
+
+EXPOSE ${PORT}
+
+CMD ["/app/.venv/bin/python", "main.py"]
