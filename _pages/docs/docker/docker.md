@@ -1,10 +1,29 @@
 ---
-layout: default
+layout: post
 title: "Docker: containerize a Python project"
-nav_order: 3
+categories: [docker, containers, deployment]
 ---
 
 Docker is a practical way to package code and dependencies into a single runnable unit. That matters because you can ship the *same* environment across laptops, CI, and servers, reducing “works on my machine” and making runs easier to reproduce.
+
+---
+
+## On this page
+
+- [Concepts in 2 minutes](#concepts-in-2-minutes)
+- [Project assumptions](#project-assumptions)
+- [Prerequisites](#prerequisites)
+- [Quickstart: build and run](#quickstart-build-and-run)
+  - [Local dev with compose](#local-dev-with-compose)
+  - [Build an image: CI/CD artifact](#build-an-image-ci-cd-artifact)
+  - [Run a container](#run-a-container)
+  - [Override the command](#override-the-command)
+- [The reference Dockerfile](#the-reference-dockerfile)
+- [Adapting to other dependency managers](#adapting-to-other-dependency-managers)
+- [Compose for local dev](#compose-for-local-dev)
+- [Best practices](#best-practices)
+- [Daily commands](#daily-commands)
+- [Troubleshooting](#troubleshooting)
 
 ---
 

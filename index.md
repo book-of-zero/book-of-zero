@@ -9,6 +9,6 @@ Practical notes for building solid foundations in Data, AI, and engineering.
 
 ## Topics
 
-- [Git workflow]({% link docs/git/git.md %})
-- [Docker]({% link docs/docker/docker.md %})
+- [Git workflow]({% link _pages/docs/git/git.md %})
+- [Docker]({% link _pages/docs/docker/docker.md %})
 
