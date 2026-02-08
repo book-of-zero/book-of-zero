@@ -43,17 +43,17 @@ Use these when you want a strong baseline for repo hygiene without reinventing t
 <details class="boz-resource">
   <summary><code>.gitignore.example</code></summary>
 
-```gitignore
+{% highlight text %}
 {% include_relative .gitignore.example %}
-```
+{% endhighlight %}
 </details>
 
 <details class="boz-resource">
   <summary><code>.gitattributes.example</code></summary>
 
-```gitattributes
+{% highlight text %}
 {% include_relative .gitattributes.example %}
-```
+{% endhighlight %}
 </details>
 
 ---

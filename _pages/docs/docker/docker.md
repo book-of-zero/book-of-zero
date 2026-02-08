@@ -69,33 +69,33 @@ Use these when you want a “works everywhere” baseline quickly, then customiz
 <details class="boz-resource">
   <summary><code>.dockerignore.example</code></summary>
 
-```dockerignore
+{% highlight text %}
 {% include_relative .dockerignore.example %}
-```
+{% endhighlight %}
 </details>
 
 <details class="boz-resource">
   <summary><code>Dockerfile.example</code></summary>
 
-```dockerfile
+{% highlight dockerfile %}
 {% include_relative Dockerfile.example %}
-```
+{% endhighlight %}
 </details>
 
 <details class="boz-resource">
   <summary><code>docker-compose.yaml.example</code></summary>
 
-```yaml
+{% highlight yaml %}
 {% include_relative docker-compose.yaml.example %}
-```
+{% endhighlight %}
 </details>
 
 <details class="boz-resource">
   <summary><code>docker-compose.hardened.yaml.example</code></summary>
 
-```yaml
+{% highlight yaml %}
 {% include_relative docker-compose.hardened.yaml.example %}
-```
+{% endhighlight %}
 </details>
 
 ---
