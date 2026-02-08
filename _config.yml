@@ -25,6 +25,7 @@ collections:
   pages:
     output: true
     permalink: /:path/
+    sort_by: nav_order
 
 ordered_collections:
   - pages

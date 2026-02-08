@@ -2,6 +2,7 @@
 layout: post
 title: "Docker: containerize a Python project"
 categories: [docker, containers, deployment]
+nav_order: 2
 ---
 
 Docker is a practical way to package code and dependencies into a single runnable unit. That matters because you can ship the *same* environment across laptops, CI, and servers, reducing “works on my machine” and making runs easier to reproduce.

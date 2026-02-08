@@ -2,7 +2,7 @@
 layout: home
 title: Book of Zero
 permalink: /
-nav_order: 1
+nav_order: 0
 ---
 
 Practical notes for building solid foundations in Data, AI, and engineering.
