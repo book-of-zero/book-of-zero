@@ -5,16 +5,16 @@ categories: [docker, containers, deployment]
 nav_order: 2
 ---
 
-Docker is a practical way to package code and dependencies into a single runnable unit. That matters because you can ship the *same* environment across laptops, CI, and servers, reducing “works on my machine” and making runs easier to reproduce.
+Docker is a practical way to package code and dependencies into a single runnable unit. This makes it easier to run the *same* environment across laptops, CI, and servers, reducing “works on my machine” issues and improving reproducibility.
 
 ---
 
 ## On this page
 
-- [Concepts in 2 minutes](#concepts-in-2-minutes)
+- [Key concepts](#key-concepts)
 - [Project assumptions](#project-assumptions)
 - [Prerequisites](#prerequisites)
-- [Quickstart: build and run](#quickstart-build-and-run)
+- [Quick start: build and run](#quick-start-build-and-run)
   - [Local dev with compose](#local-dev-with-compose)
   - [Build an image: CI/CD artifact](#build-an-image-ci-cd-artifact)
   - [Run a container](#run-a-container)
@@ -23,12 +23,12 @@ Docker is a practical way to package code and dependencies into a single runnabl
 - [Adapting to other dependency managers](#adapting-to-other-dependency-managers)
 - [Compose for local dev](#compose-for-local-dev)
 - [Best practices](#best-practices)
-- [Daily commands](#daily-commands)
+- [Common commands](#common-commands)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
-## Concepts in 2 minutes
+## Key concepts
 
 - **Image vs container**: an image is the immutable artifact you build; a container is a running instance of that image.
 - **Layers and cache**: each Dockerfile instruction produces a layer. If inputs do not change, Docker can reuse cached layers to speed up rebuilds.
@@ -64,7 +64,7 @@ An example is provided at `pages/docs/docker/.dockerignore.example` that you can
 
 ### Resources (copy/paste templates)
 
-Use these when you want a “works everywhere” baseline quickly, then customize for your app.
+Use these templates when you want a baseline quickly, then customize for your application.
 
 <details class="boz-resource">
   <summary><code>.dockerignore.example</code></summary>
@@ -100,7 +100,7 @@ Use these when you want a “works everywhere” baseline quickly, then customiz
 
 ---
 
-## Quickstart: build and run
+## Quick start: build and run
 
 This guide uses a reference Dockerfile at `pages/docs/docker/Dockerfile.example`.
 
@@ -142,7 +142,7 @@ This is a practical loop for local development:
 docker compose run --rm <service-name> /app/.venv/bin/python -m <module>
 ```
 
-- **Debug inside the container**: use the shell commands in **Daily commands**.
+- **Debug inside the container**: use the shell commands in **Common commands**.
 
 If your local workflow needs live code reload, prefer making that an explicit compose variant (bind-mount code + dev server command), while keeping the default path “rebuild the image” so you do not accidentally depend on host-only state.
 
@@ -486,7 +486,7 @@ An example compose file is provided at `pages/docs/docker/docker-compose.yaml.ex
 
 An optional hardened override is provided at `pages/docs/docker/docker-compose.hardened.yaml.example`. It is designed to layer on top of the baseline file so you can switch between a low-friction dev posture and a production-like posture with a single additional `-f` flag.
 
-This section focuses on how to read and adapt the compose file. For the setup and run steps, follow the earlier **Quickstart: Local dev with compose** section.
+This section focuses on how to read and adapt the compose file. For the setup and run steps, follow the earlier **Quick start: Local dev with compose** section.
 
 ### When to use each compose field
 
@@ -592,7 +592,7 @@ docker compose logs -f <service-name>
 
 ---
 
-## Daily commands
+## Common commands
 
 These are commonly used commands once containers are part of the workflow:
 
@@ -613,7 +613,7 @@ These are commonly used commands once containers are part of the workflow:
 
 Make sure your build context includes `pyproject.toml` and the lock file referenced by the Dockerfile (for `uv`, this is `uv.lock`). Run `docker build` from the project root so those files are in the build context.
 
-If your Dockerfile is not in the project root, keep the build context as `.` and point to the Dockerfile via `-f`, as shown in the Quickstart.
+If your Dockerfile is not in the project root, keep the build context as `.` and point to the Dockerfile via `-f`, as shown in the Quick start section.
 
 ### Enable BuildKit mounts (`RUN --mount=...`)
 
