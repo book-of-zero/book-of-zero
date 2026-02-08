@@ -295,3 +295,60 @@
   border-color: color-mix(in srgb, var(--cp-red), transparent 65%);
 }
 
+/* ──────────────────────────────────────────────────────────────
+   Resource blocks (collapsible file previews)
+   ────────────────────────────────────────────────────────────── */
+
+.boz-resource {
+  margin: 1rem 0;
+  border: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 20%);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--cp-mantle), transparent 20%);
+  overflow: hidden;
+}
+
+.boz-resource > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  color: var(--cp-text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.boz-resource > summary::-webkit-details-marker {
+  display: none;
+}
+
+.boz-resource > summary code {
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.boz-resource[open] > summary {
+  border-bottom: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 20%);
+}
+
+.boz-resource > summary::after {
+  content: "▸";
+  color: color-mix(in srgb, var(--cp-text), transparent 35%);
+  transition: transform 120ms ease;
+}
+
+.boz-resource[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.boz-resource .highlight,
+.boz-resource pre {
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+}
+

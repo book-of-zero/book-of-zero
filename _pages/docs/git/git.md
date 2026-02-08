@@ -36,6 +36,26 @@ This gives you speed on `dev` and control on `staging` + `main`.
   
 Sometimes you will also use `.gitattributes` to standardize things like line endings, file treatment, and merge behavior (see `.gitattributes.example`).
 
+### Resources (copy/paste templates)
+
+Use these when you want a strong baseline for repo hygiene without reinventing the “standard ignores” wheel.
+
+<details class="boz-resource">
+  <summary><code>.gitignore.example</code></summary>
+
+```gitignore
+{% include_relative .gitignore.example %}
+```
+</details>
+
+<details class="boz-resource">
+  <summary><code>.gitattributes.example</code></summary>
+
+```gitattributes
+{% include_relative .gitattributes.example %}
+```
+</details>
+
 ---
 
 ## Daily commands

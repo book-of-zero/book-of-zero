@@ -62,6 +62,42 @@ The reference Dockerfile uses BuildKit features (notably `RUN --mount=...`). Mak
 You will also want a `.dockerignore` at the project root to keep builds fast and avoid leaking local artifacts into images.
 An example is provided at `pages/docs/docker/.dockerignore.example` that you can use as a starting point (copy and adapt if it matches your repository).
 
+### Resources (copy/paste templates)
+
+Use these when you want a “works everywhere” baseline quickly, then customize for your app.
+
+<details class="boz-resource">
+  <summary><code>.dockerignore.example</code></summary>
+
+```dockerignore
+{% include_relative .dockerignore.example %}
+```
+</details>
+
+<details class="boz-resource">
+  <summary><code>Dockerfile.example</code></summary>
+
+```dockerfile
+{% include_relative Dockerfile.example %}
+```
+</details>
+
+<details class="boz-resource">
+  <summary><code>docker-compose.yaml.example</code></summary>
+
+```yaml
+{% include_relative docker-compose.yaml.example %}
+```
+</details>
+
+<details class="boz-resource">
+  <summary><code>docker-compose.hardened.yaml.example</code></summary>
+
+```yaml
+{% include_relative docker-compose.hardened.yaml.example %}
+```
+</details>
+
 ---
 
 ## Quickstart: build and run
