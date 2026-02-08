@@ -79,6 +79,20 @@
   background: color-mix(in srgb, var(--cp-blue), transparent 70%);
 }
 
+/* Remove any per-line overlays (e.g. highlighted lines/rows) */
+.highlight .hll,
+.highlight .line,
+.highlight .lineno,
+.highlight .gl {
+  background: transparent !important;
+}
+
+.markdown-section pre,
+.markdown-section pre code,
+.markdown-section pre code span {
+  background-image: none !important;
+}
+
 /* ──────────────────────────────────────────────────────────────
    Rouge token colors (Catppuccin)
    Works with GitBook theme's Rouge HTML output under `.highlight`.
@@ -159,6 +173,13 @@
 /* Builtins */
 .highlight .nb,
 .highlight .bp {
+  color: var(--cp-sapphire);
+}
+
+/* CLI flags/options (e.g. `--mount`, `--env`): Rouge often classifies as `nt` */
+.highlight .nt,
+.highlight .nl,
+.highlight .nx {
   color: var(--cp-sapphire);
 }
 
