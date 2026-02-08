@@ -87,9 +87,37 @@
   background: transparent !important;
 }
 
+.highlight table,
+.highlight tbody,
+.highlight tr,
+.highlight td,
+.highlight th,
+.highlight .rouge-table,
+.highlight .rouge-gutter,
+.highlight .rouge-code {
+  background: transparent !important;
+  background-image: none !important;
+}
+
 .markdown-section pre,
 .markdown-section pre code,
 .markdown-section pre code span {
+  background-image: none !important;
+}
+
+/* Dark mode (night): some Rouge themes add row overlays via nested spans/tables */
+.book.color-theme-2 .markdown-section pre code,
+.book.color-theme-2 .markdown-section pre code span,
+.book.color-theme-2 .highlight pre,
+.book.color-theme-2 .highlight code,
+.book.color-theme-2 .highlight .rouge-table,
+.book.color-theme-2 .highlight .rouge-gutter,
+.book.color-theme-2 .highlight .rouge-code {
+  background-color: transparent !important;
+}
+
+.book.color-theme-2 .markdown-section pre {
+  background-color: var(--cp-bg) !important;
   background-image: none !important;
 }
 
