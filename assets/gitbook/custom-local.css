@@ -1,30 +1,189 @@
-/* Book of Zero overrides: code blocks + copy button UI */
+/* Book of Zero overrides: Catppuccin code theme + copy button UI */
 
 /* ──────────────────────────────────────────────────────────────
-   Code blocks: better contrast + spacing
-   (Token colors come from `syntax_highlighter_style: github`.)
+   Catppuccin palettes
+   - Latte for light (default)
+   - Mocha for dark (GitBook "night" theme: `.book.color-theme-2`)
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Latte */
+  --cp-bg: #eff1f5;
+  --cp-mantle: #e6e9ef;
+  --cp-crust: #dce0e8;
+  --cp-surface0: #ccd0da;
+  --cp-surface1: #bcc0cc;
+  --cp-overlay1: #8c8fa1;
+  --cp-text: #4c4f69;
+  --cp-subtext0: #6c6f85;
+  --cp-blue: #1e66f5;
+  --cp-lavender: #7287fd;
+  --cp-sapphire: #209fb5;
+  --cp-teal: #179299;
+  --cp-green: #40a02b;
+  --cp-yellow: #df8e1d;
+  --cp-peach: #fe640b;
+  --cp-red: #d20f39;
+  --cp-mauve: #8839ef;
+}
+
+.book.color-theme-2 {
+  /* Mocha */
+  --cp-bg: #1e1e2e;
+  --cp-mantle: #181825;
+  --cp-crust: #11111b;
+  --cp-surface0: #313244;
+  --cp-surface1: #45475a;
+  --cp-overlay1: #7f849c;
+  --cp-text: #cdd6f4;
+  --cp-subtext0: #a6adc8;
+  --cp-blue: #89b4fa;
+  --cp-lavender: #b4befe;
+  --cp-sapphire: #74c7ec;
+  --cp-teal: #94e2d5;
+  --cp-green: #a6e3a1;
+  --cp-yellow: #f9e2af;
+  --cp-peach: #fab387;
+  --cp-red: #f38ba8;
+  --cp-mauve: #cba6f7;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Code blocks: layout + contrast
    ────────────────────────────────────────────────────────────── */
 
 .markdown-section pre {
   border-radius: 10px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: #f8fafc;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+  border: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 20%);
+  background: var(--cp-bg);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--cp-crust), transparent 90%);
 }
 
 .markdown-section pre code {
   font-size: 0.9em;
   line-height: 1.55;
-  color: #0f172a; /* avoid washed-out gray */
+  color: var(--cp-text);
 }
 
-/* Inline code: subtle but readable */
+/* Inline code */
 .markdown-section :not(pre) > code {
-  background: rgba(2, 6, 23, 0.06);
-  border: 1px solid rgba(2, 6, 23, 0.08);
+  background: color-mix(in srgb, var(--cp-bg), transparent 35%);
+  border: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 25%);
   border-radius: 6px;
   padding: 0.15em 0.35em;
-  color: #0f172a;
+  color: var(--cp-text);
+}
+
+/* Selection inside code blocks */
+.markdown-section pre ::selection {
+  background: color-mix(in srgb, var(--cp-blue), transparent 70%);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Rouge token colors (Catppuccin)
+   Works with GitBook theme's Rouge HTML output under `.highlight`.
+   ────────────────────────────────────────────────────────────── */
+
+.highlight,
+.highlight pre,
+.highlight code {
+  color: var(--cp-text);
+}
+
+/* Comments */
+.highlight .c,
+.highlight .cm,
+.highlight .c1,
+.highlight .cs,
+.highlight .cp {
+  color: var(--cp-overlay1);
+  font-style: italic;
+}
+
+/* Keywords / control flow */
+.highlight .k,
+.highlight .kd,
+.highlight .kn,
+.highlight .kp,
+.highlight .kr,
+.highlight .kt,
+.highlight .kc {
+  color: var(--cp-mauve);
+}
+
+/* Strings */
+.highlight .s,
+.highlight .s1,
+.highlight .s2,
+.highlight .sb,
+.highlight .sc,
+.highlight .sd,
+.highlight .se,
+.highlight .sh,
+.highlight .si,
+.highlight .sx,
+.highlight .sr,
+.highlight .ss {
+  color: var(--cp-green);
+}
+
+/* Numbers */
+.highlight .m,
+.highlight .mi,
+.highlight .mf,
+.highlight .mh,
+.highlight .mo,
+.highlight .mb,
+.highlight .mx,
+.highlight .il {
+  color: var(--cp-peach);
+}
+
+/* Names: functions/classes/constants */
+.highlight .nf {
+  color: var(--cp-blue);
+}
+
+.highlight .nc,
+.highlight .nn,
+.highlight .ne {
+  color: var(--cp-lavender);
+}
+
+.highlight .no,
+.highlight .nv,
+.highlight .na {
+  color: var(--cp-yellow);
+}
+
+/* Builtins */
+.highlight .nb,
+.highlight .bp {
+  color: var(--cp-sapphire);
+}
+
+/* Operators / punctuation */
+.highlight .o,
+.highlight .ow {
+  color: var(--cp-teal);
+}
+
+.highlight .p {
+  color: color-mix(in srgb, var(--cp-text), transparent 10%);
+}
+
+/* Errors */
+.highlight .err {
+  color: var(--cp-red);
+  background: color-mix(in srgb, var(--cp-red), transparent 85%);
+}
+
+/* Diffs */
+.highlight .gi {
+  background: color-mix(in srgb, var(--cp-green), transparent 88%);
+}
+.highlight .gd {
+  background: color-mix(in srgb, var(--cp-red), transparent 88%);
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -45,9 +204,9 @@
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  border: 1px solid rgba(2, 6, 23, 0.12);
-  background: rgba(255, 255, 255, 0.92);
-  color: rgba(2, 6, 23, 0.75);
+  border: 1px solid color-mix(in srgb, var(--cp-surface0), transparent 20%);
+  background: color-mix(in srgb, var(--cp-mantle), transparent 8%);
+  color: color-mix(in srgb, var(--cp-text), transparent 25%);
   cursor: pointer;
   opacity: 0;
   transform: translateY(-2px);
@@ -61,13 +220,13 @@
 }
 
 .boz-copy-code:hover {
-  background: #ffffff;
-  border-color: rgba(9, 105, 218, 0.28);
-  color: #0969da;
+  background: color-mix(in srgb, var(--cp-mantle), transparent 0%);
+  border-color: color-mix(in srgb, var(--cp-blue), transparent 65%);
+  color: var(--cp-blue);
 }
 
 .boz-copy-code:focus-visible {
-  outline: 3px solid rgba(9, 105, 218, 0.25);
+  outline: 3px solid color-mix(in srgb, var(--cp-blue), transparent 75%);
   outline-offset: 2px;
 }
 
@@ -78,12 +237,12 @@
 }
 
 .boz-copy-code[data-state="copied"] {
-  color: #1a7f37;
-  border-color: rgba(26, 127, 55, 0.28);
+  color: var(--cp-green);
+  border-color: color-mix(in srgb, var(--cp-green), transparent 65%);
 }
 
 .boz-copy-code[data-state="error"] {
-  color: #cf222e;
-  border-color: rgba(207, 34, 46, 0.28);
+  color: var(--cp-red);
+  border-color: color-mix(in srgb, var(--cp-red), transparent 65%);
 }
 
