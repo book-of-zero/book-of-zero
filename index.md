@@ -11,5 +11,8 @@ Practical notes for building solid foundations in Data, AI, and engineering.
 
 - [Git workflow]({% link _pages/docs/git/git.md %})
 - [Docker]({% link _pages/docs/docker/docker.md %})
-- [LLM Reliability]({% link _pages/docs/genai/llm-reliability/llm-reliability.md %})
+
+### GenAI
+
+- [System prompts]({% link _pages/docs/genai/system-prompt/system-prompt.md %})
 

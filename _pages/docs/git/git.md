@@ -190,6 +190,35 @@ Direct merge + push is acceptable on `dev` because it is not protected.
 
 ---
 
+## Partial merge
+
+When you need specific commits or files on `staging` without promoting everything from `dev`.
+
+### Cherry-pick a commit
+
+- `git checkout staging`
+- `git pull`
+- `git checkout -b <type>/<topic>`
+- `git cherry-pick -x <commit-hash>`
+- `git push`
+- Open a PR: `<type>/<topic>` → `staging`
+
+`-x` appends the original hash to the message so you can trace it back.
+
+### Pull a file from another branch
+
+- `git checkout staging`
+- `git pull`
+- `git checkout -b <type>/<topic>`
+- `git checkout dev -- path/to/file`
+- `git commit -m "<type>: <summary>"`
+- `git push`
+- Open a PR: `<type>/<topic>` → `staging`
+
+Then promote `staging` → `main` via the normal release PR.
+
+---
+
 ## Stash and undo
 
 - **Temporarily park work**: `git stash`, then later `git stash pop`
