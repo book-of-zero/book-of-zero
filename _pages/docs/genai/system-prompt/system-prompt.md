@@ -272,7 +272,7 @@ Key design considerations:
 
 Concrete input/output pairs that show the model what good output looks like. Examples primarily teach **format and structure** rather than factual mappings — the label space, input text distribution, and overall sequence format matter more than individual label correctness. This makes examples the most reliable way to steer output shape, reasoning depth, and tone.
 
-```xml
+````xml
 <examples>
 <example>
 <user>Add a retry mechanism to the HTTP client.</user>
@@ -326,7 +326,7 @@ identify and analyze similar existing code before writing).
 </assistant>
 </example>
 </examples>
-```
+````
 
 Key design considerations:
 
