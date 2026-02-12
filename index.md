@@ -10,7 +10,11 @@ Practical notes for building solid foundations in Data, AI, and engineering.
 ## Topics
 
 - [Git workflow]({% link _pages/docs/git/git.md %})
-- [Docker]({% link _pages/docs/docker/docker.md %})
+
+### Containerization
+
+- [Docker]({% link _pages/docs/containerization/docker/docker.md %})
+- [Docker Compose]({% link _pages/docs/containerization/docker-compose/docker-compose.md %})
 
 ### Machine Learning
 
@@ -18,5 +22,5 @@ Practical notes for building solid foundations in Data, AI, and engineering.
 
 ### GenAI
 
-- [System prompts]({% link _pages/docs/genai/system-prompt/system-prompt.md %})
+- [System prompt]({% link _pages/docs/genai/system-prompt/system-prompt.md %})
 
