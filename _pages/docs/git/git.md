@@ -22,7 +22,7 @@ Git is the backbone of collaborative development. It also protects reproducibili
 - [Hotfix](#hotfix)
 - [Partial merge](#partial-merge)
 - [Stash and undo](#stash-and-undo)
-- [Git for reproducible work](#git-for-reproducible-work)
+- [Reproducibility](#git-for-reproducible-work)
 ---
 
 ## The branch model
@@ -245,7 +245,7 @@ Then promote `staging` → `main` via the normal release PR.
 
 ---
 
-## Git for reproducible work
+## Reproducibility
 
 ### What to commit
 
