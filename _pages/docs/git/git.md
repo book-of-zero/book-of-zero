@@ -23,6 +23,7 @@ Git is the backbone of collaborative development. It also protects reproducibili
 - [Partial merge](#partial-merge)
 - [Stash and undo](#stash-and-undo)
 - [Reproducibility](#reproducibility)
+
 ---
 
 ## The branch model
