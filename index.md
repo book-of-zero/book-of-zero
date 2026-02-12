@@ -12,6 +12,10 @@ Practical notes for building solid foundations in Data, AI, and engineering.
 - [Git workflow]({% link _pages/docs/git/git.md %})
 - [Docker]({% link _pages/docs/docker/docker.md %})
 
+### Machine Learning
+
+- [Metrics]({% link _pages/docs/machine-learning/metrics/metrics.md %})
+
 ### GenAI
 
 - [System prompts]({% link _pages/docs/genai/system-prompt/system-prompt.md %})

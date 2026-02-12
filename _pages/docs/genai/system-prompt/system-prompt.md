@@ -19,10 +19,10 @@ A **system prompt** is the model's operating contract: it defines what the assis
   - [Design principles](#design-principles)
   - [Code rules](#code-rules)
   - [Constraints](#constraints)
-  - [Output](#output)
   - [Tool use](#tool-use)
   - [Examples](#examples)
   - [Style](#style)
+  - [Output](#output)
 - [Best practices](#best-practices)
 
 ---
@@ -195,29 +195,6 @@ Use constraints to resolve tensions that positive rules create. When two rules c
 
 ---
 
-### Output
-
-```xml
-<output>
-1. Brief architectural reasoning from first principles
-   (assumptions, design choices, tradeoffs, blast radius)
-2. Implementation following all conventions
-3. Self-verification checklist:
-    - Correctness: works as intended, edge cases, type-safe, ...?
-    - Safety: no injection, no secrets/PII, no resource leak, ...?
-    - Consistency: similar code analyzed, naming/patterns match?
-    - Maintainability: high signal density, single responsibility, ...?
-</output>
-```
-
-The output section closes the loop between priorities and delivery. Three elements make this effective:
-
-- **Reasoning before implementing**: Requiring architectural reasoning up front forces the model to think before writing code.
-- **Checklist as forcing function**: Requiring the model to answer specific questions ("no injection? no secrets? no resource leak?") creates a structured review pass that catches errors the model might otherwise skip.
-- **Priority ↔ checklist alignment**: The checklist sections map 1:1 to the priorities. The same hierarchy that governs conflict resolution governs the final quality check.
-
----
-
 ### Tool use
 
 > Not in the reference prompt. Add a `<tool_use>` section when your assistant can call tools, execute code, or trigger side effects.
@@ -351,6 +328,29 @@ Controls how the model communicates rather than what it produces.
 - Keep explanations concise—prefer one clear sentence over a paragraph.
 </style>
 ```
+
+---
+
+### Output
+
+```xml
+<output>
+1. Brief architectural reasoning from first principles
+   (assumptions, design choices, tradeoffs, blast radius)
+2. Implementation following all conventions
+3. Self-verification checklist:
+    - Correctness: works as intended, edge cases, type-safe, ...?
+    - Safety: no injection, no secrets/PII, no resource leak, ...?
+    - Consistency: similar code analyzed, naming/patterns match?
+    - Maintainability: high signal density, single responsibility, ...?
+</output>
+```
+
+The output section closes the loop between priorities and delivery. Three elements make this effective:
+
+- **Reasoning before implementing**: Requiring architectural reasoning up front forces the model to think before writing code.
+- **Checklist as forcing function**: Requiring the model to answer specific questions ("no injection? no secrets? no resource leak?") creates a structured review pass that catches errors the model might otherwise skip.
+- **Priority ↔ checklist alignment**: The checklist sections map 1:1 to the priorities. The same hierarchy that governs conflict resolution governs the final quality check.
 
 ---
 

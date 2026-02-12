@@ -6,8 +6,6 @@ nav_order: 1
 
 Git is the backbone of collaborative development. It also protects reproducibility: you can point to an exact state of code, configs, and decisions that produced a result.
 
-This page is intentionally practical. It uses the commands people actually type and a branching model that fits real teams.
-
 ---
 
 ## The branch model
