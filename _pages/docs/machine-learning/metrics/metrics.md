@@ -20,7 +20,6 @@ Optimize for the wrong metric and a model that looks great on paper fails in pro
 - [Workflow: regression](#workflow-regression)
   - [Baseline](#baseline-1)
   - [Model selection and evaluation](#model-selection-and-evaluation)
-  - [Interpreting MAE vs RMSE together](#interpreting-mae-vs-rmse-together)
   - [Production monitoring](#production-monitoring-1)
 - [Reading the numbers](#reading-the-numbers)
 - [Custom metrics](#custom-metrics)
@@ -67,9 +66,7 @@ Before training any model, compute the baseline: what score does a naive predict
 - **Majority-class classifier**: always predicts the dominant class. This is your accuracy baseline. If your model barely beats it, the model is not useful.
 - **Random classifier**: AUC-ROC = 0.5, MCC = 0. Any trained model should clear these comfortably.
 
-Establish the baseline first. It prevents you from celebrating a "92% accuracy" on a dataset that is 91% one class.
-
-**The accuracy paradox.** A model that predicts the majority class for every input achieves high accuracy on imbalanced data while being completely useless. A dataset with 99% negatives gives 99% accuracy to a model that always predicts negative — and catches zero positive cases. This is why accuracy alone is insufficient for imbalanced problems. Always pair it with metrics that reflect performance on the minority class: recall, precision, F1, MCC, or AUC-PR.
+Establish the baseline first. It prevents you from celebrating a "92% accuracy" on a dataset that is 91% one class — this is the **accuracy paradox.** A model that predicts the majority class for every input achieves high accuracy on imbalanced data while being completely useless. This is why accuracy alone is insufficient for imbalanced problems. Always pair it with metrics that reflect performance on the minority class: recall, precision, F1, MCC, or AUC-PR.
 
 ### Model selection
 
@@ -79,7 +76,7 @@ To compare reliably, evaluate with cross-validation — typically 5-fold. Sklear
 
 **Balanced data → AUC-ROC.**
 
-AUC-ROC plots recall (true positive rate) vs false positive rate across all thresholds. AUC = 1.0 is perfect, 0.5 is random. AUC is a ranking metric — it measures whether the model scores positives higher than negatives. It says nothing about whether predicted probabilities are calibrated.
+AUC-ROC measures ranking quality: if you pick a random positive and a random negative, AUC is the probability that the model scores the positive higher. AUC = 1.0 is perfect separation, 0.5 is random — the model cannot tell the two apart. Technically, it plots recall (true positive rate) vs false positive rate across all thresholds. AUC says nothing about whether predicted probabilities are calibrated.
 
 How to interpret:
 - 0.9–1.0: outstanding discriminator.
@@ -97,7 +94,7 @@ Use AUC-PR for fraud detection, disease screening, defect detection — any prob
 
 **When in doubt → MCC.**
 
-MCC (Matthews Correlation Coefficient) uses all four quadrants of the confusion matrix. It ranges from −1 (perfect inversion) through 0 (random) to +1 (perfect). Unlike accuracy and F1, MCC can only score high if the model handles both positives and negatives well. It works regardless of class balance.
+MCC (Matthews Correlation Coefficient) uses all four quadrants of the confusion matrix. It ranges from −1 (perfect inversion) through 0 (random) to +1 (perfect). Unlike accuracy and F1, MCC can only score high if the model handles both positives and negatives well — F1 ignores TN entirely, so a model that over-predicts the positive class can still get a decent F1. MCC catches that. It works regardless of class balance.
 
 `MCC = (TP × TN − FP × FN) / √((TP + FP)(TP + FN)(TN + FP)(TN + FN))`
 
@@ -121,10 +118,10 @@ Use log loss when downstream decisions depend on the probability itself, not jus
 
 **Multiclass.**
 
-All metrics above extend to multiclass problems. The key decision is how to average across classes:
+All metrics above extend to multiclass problems. The key decision is how to average across classes — and it changes the story. Imagine three classes with 1000, 100, and 10 samples:
 
-- **`macro`**: compute the metric per class, then take the unweighted mean. Each class contributes equally regardless of size. Use this when rare classes are important — it surfaces poor performance on them.
-- **`weighted`**: same as macro, but weighted by the number of true instances per class. Use this when you want the score to reflect overall performance proportional to class frequency.
+- **`macro`**: compute the metric per class, then take the unweighted mean. The 10-sample class counts as much as the 1000-sample class. Use this when rare classes are important — it surfaces poor performance on them.
+- **`weighted`**: same as macro, but weighted by the number of true instances per class. The 1000-sample class dominates. Use this when the score should reflect overall performance proportional to class frequency.
 - **`micro`**: pool all TP, FP, FN globally, then compute. For multiclass (not multilabel), micro F1 = micro precision = micro recall = accuracy.
 
 MCC works for multiclass without averaging — pass predictions directly to `sklearn.metrics.matthews_corrcoef`. Note: for multiclass, the minimum MCC is between −1 and 0 (depending on class distribution), not exactly −1.
@@ -188,19 +185,21 @@ Unlike classification, regression does not have a threshold step. The same metri
 
 **Default: MAE.**
 
-`MAE = mean(|y − ŷ|)`. The average size of the error in the same unit as the target. Easy to interpret: "the model is off by 2.3 units on average."
+The average size of the error, in the same unit as the target. Easy to interpret: "the model is off by 2.3 units on average." MAE treats all errors equally — it is robust to outliers and is the right default unless you have a specific reason to penalize large errors more.
 
-MAE treats all errors equally. It is robust to outliers and is the right default unless you have a specific reason to penalize large errors more.
+`MAE = mean(|y − ŷ|)`
 
 **When big misses are costly: RMSE.**
 
-`RMSE = √(mean((y − ŷ)²))`. The squaring step punishes large errors disproportionately. A few big misses raise RMSE much more than they raise MAE.
+RMSE punishes large errors disproportionately — the squaring step makes sure a few big misses raise RMSE much more than they raise MAE. Use RMSE when a large error is much worse than a small one: demand forecasting (big underestimate = stockout), energy grid planning, structural engineering.
 
-Use RMSE when a large error is much worse than a small one — demand forecasting (big underestimate = stockout), energy grid planning, structural engineering.
+`RMSE = √(mean((y − ŷ)²))`
 
 **For scale-independent comparison: R².**
 
-`R² = 1 − (SS_res / SS_tot)`, where `SS_res = Σ(y − ŷ)²` and `SS_tot = Σ(y − ȳ)²`. It measures the proportion of variance explained by the model. R² = 1.0 is perfect, R² = 0 means the model is no better than predicting the mean.
+R² answers one question: what proportion of the variance in the target does the model explain? R² = 1.0 is perfect, R² = 0 means the model is no better than predicting the mean.
+
+`R² = 1 − (SS_res / SS_tot)`, where `SS_res = Σ(y − ŷ)²` and `SS_tot = Σ(y − ȳ)²`.
 
 Use R² when comparing models across different targets or scales (MAE and RMSE are in the target's units, so they are not directly comparable across different problems). R² is also sklearn's default `.score()` for regressors.
 
@@ -211,14 +210,7 @@ How to interpret:
 - 0.0–0.4: weak — the model explains little. Consider whether the problem is inherently noisy or the features are insufficient.
 - R² < 0: the model is worse than always predicting the mean. Something is fundamentally wrong.
 
-### Interpreting MAE vs RMSE together
-
-RMSE is always ≥ MAE. The gap between them tells you something:
-
-- **RMSE ≈ MAE**: errors are uniform — the model misses by roughly the same amount everywhere.
-- **RMSE >> MAE**: a few large errors are pulling RMSE up. Investigate the outliers — they may reveal a data quality issue, a subpopulation the model cannot handle, or a feature gap.
-
-Report both. MAE tells you the typical error; RMSE tells you about the worst-case behavior.
+**Interpreting MAE and RMSE together.** RMSE is always ≥ MAE. The gap between them tells you something: if RMSE ≈ MAE, errors are uniform — the model misses by roughly the same amount everywhere. If RMSE >> MAE, a few large errors are pulling RMSE up — investigate the outliers, as they may reveal a data quality issue, a subpopulation the model cannot handle, or a feature gap. Report both: MAE tells you the typical error, RMSE tells you about the worst-case behavior.
 
 ### Production monitoring
 
@@ -241,25 +233,30 @@ Metrics are only useful if you interpret them in context.
 - **Check both classes.** A high overall score can hide poor performance on the minority class. Always look at per-class precision and recall.
 - **Compare MAE and RMSE.** If RMSE is much larger than MAE, you have an outlier problem — do not average it away.
 - **Negative MCC: check the magnitude.** Slightly negative (near zero) is likely noise. Strongly negative means the model is systematically inverted — check for label errors, data leakage, or a flipped target. If the inversion is confirmed, flip the predictions.
-- **Context determines "good enough."** An AUC of 0.75 is excellent for a hard medical imaging task and terrible for a spam filter. There is no universal threshold for a "good" score.
+- **Context determines "good enough."** An AUC of 0.75 can be strong for a hard medical imaging task and terrible for a spam filter. There is no universal threshold for a "good" score.
+- **Suspiciously perfect scores signal leakage.** If a model achieves an AUC of 0.99 on a non-trivial problem, the most likely explanation is data leakage — not a great model. Check for target information bleeding into features, preprocessing applied before the train/test split, or duplicate records across splits. Similarly, tuning hyperparameters on the test set inflates all metrics — always use a separate validation set or cross-validation.
+- **Read the standard deviation from cross-validation.** A mean AUC of 0.83 ± 0.02 is more trustworthy than 0.85 ± 0.08. High variance across folds means the model's performance depends heavily on which data it sees — the model may be unstable or the dataset too small. If the standard deviation is large relative to the difference between models, you cannot confidently pick a winner.
+- **Test set class balance must match deployment.** Precision, recall, and F1 depend on the ratio of positives to negatives. If your test set has 10% positives but production has 1%, precision will be worse in production than your test results suggest. AUC-ROC is invariant to class balance shifts, but threshold-dependent metrics are not.
 - **Small test sets lie.** A metric computed on 100 samples has wide confidence intervals. If you cannot increase the test set, use bootstrap resampling to quantify uncertainty.
 
 ---
 
 ## Custom metrics
 
-Standard metrics assume all errors cost the same. In practice they rarely do. When the business cost of a false negative is fundamentally different from a false positive, build a metric that reflects the actual cost structure.
+Metrics like accuracy and F1 assume all errors cost the same. In practice they rarely do. When the business cost of a false negative is fundamentally different from a false positive, you need cost-sensitive evaluation.
 
-**When to build one:**
+**Try the simple options first.** Before building a custom metric, check whether sklearn's built-in mechanisms are enough. `class_weight` (available in `LogisticRegression`, `SVC`, `RandomForestClassifier`, etc.) lets you set per-class weights that modify the training loss — e.g., `class_weight={0: 1, 1: 50}` encodes a 50:1 cost ratio directly. `sample_weight` allows per-sample weighting in both training and evaluation. These handle many cost-sensitive scenarios without writing any custom code.
+
+**When to build a custom metric:**
 
 - A false negative costs 100× more than a false positive (or vice versa) and F-beta does not capture the ratio well enough.
 - The business cares about a quantity that no standard metric measures (e.g., revenue impact per prediction, time-to-detection).
-- You need to combine multiple signals into a single optimization target (e.g., accuracy penalized by latency).
+- You need to combine multiple signals into a single optimization target (e.g., revenue-weighted accuracy). Note: for constraints like latency, the standard approach is to treat them as satisficing metrics (must be below a threshold) and optimize accuracy separately, rather than combining them into one formula.
 
 **How to build one:**
 
 1. **Write down the cost matrix.** Assign a concrete cost (dollars, hours, risk) to each cell of the confusion matrix. If you cannot quantify it, estimate the ratio — "a missed fraud case costs roughly 50× more than a false alert" is enough.
-2. **Define the formula.** `Weighted cost = (FN × cost_fn) + (FP × cost_fp)`. Minimize this. For regression, replace the uniform loss with a domain-specific penalty (e.g., asymmetric loss that penalizes underestimates more than overestimates).
+2. **Define the formula.** `Weighted cost = (FN × cost_fn) + (FP × cost_fp)`. Minimize this. This assumes correct predictions (TP, TN) have zero or equal cost — if a true positive has direct value (e.g., revenue from an approved loan), include those terms too. For regression, replace the uniform loss with a domain-specific penalty (e.g., asymmetric loss that penalizes underestimates more than overestimates).
 3. **Make it a scorer.** Wrap it so your training framework can optimize against it (e.g., `sklearn.metrics.make_scorer`). If the metric is not differentiable, use it for evaluation and cross-validation — optimize a differentiable proxy during training.
 4. **Validate it against intuition.** Compute the custom metric on a few examples where you know the right answer. If the metric disagrees with human judgment, the cost model is wrong — fix the costs, not the judgment.
 
