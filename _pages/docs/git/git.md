@@ -8,6 +8,23 @@ Git is the backbone of collaborative development. It also protects reproducibili
 
 ---
 
+## On this page
+
+- [The branch model](#the-branch-model)
+- [Setup](#setup)
+- [Daily commands](#daily-commands)
+- [Commit best practices](#commit-best-practices)
+- [Workflow](#workflow)
+  - [Feature development](#feature-development)
+  - [Promote to release candidate](#promote-to-release-candidate)
+  - [Release](#release)
+- [State migrations and infrastructure changes](#state-migrations-and-infrastructure-changes)
+- [Hotfix](#hotfix)
+- [Partial merge](#partial-merge)
+- [Stash and undo](#stash-and-undo)
+- [Git for reproducible work](#git-for-reproducible-work)
+---
+
 ## The branch model
 
 Use three long-lived branches:
@@ -72,7 +89,7 @@ If you keep typing the same long commands, add an alias once and use it forever.
 
 Treat commits as a project log. A good commit message helps reviewers understand intent and helps you debug and audit later.
 
-Commit types: `feat`, `ref`, `fix`, `test`, `docs`, `chore`, `data`, `exp`.
+Commit types: `feat`, `ref`, `fix`, `test`, `docs`, `chore`, `style`, `data`, `exp`.
 
 ### The message format
 
@@ -87,8 +104,9 @@ Commit types: `feat`, `ref`, `fix`, `test`, `docs`, `chore`, `data`, `exp`.
 - **`fix`**: defect correction without changing intended scope (for example “fix: handle empty dataset gracefully”).
 - **`test`**: test-only change (for example “test: add regression for leakage bug”).
 - **`docs`**: documentation-only change (for example “docs: clarify release process”).
-- **`chore`**: maintenance work that is not a feature or fix (for example “chore: bump pre-commit hooks”).
-- **`data`**: dataset tracking or transformations that change the data contract (for example “data: update schema for customer events v2”).
+- **`chore`**: maintenance work that is not a feature or fix (for example "chore: bump pre-commit hooks").
+- **`style`**: formatting, whitespace, linting, or cosmetic changes with no behavior change (for example "style: apply black formatting to utils module").
+- **`data`**: dataset tracking or transformations that change the data contract (for example "data: update schema for customer events v2").
 - **`exp`**: AI/ML experiments (for example “exp: compare xgboost vs logistic regression”).
 
 ### Practical rules
@@ -96,6 +114,7 @@ Commit types: `feat`, `ref`, `fix`, `test`, `docs`, `chore`, `data`, `exp`.
 - Keep commits small and coherent (one intent per commit).
 - Prefer committing work that can be reviewed (avoid mixing formatting, refactors, and behavior changes in one commit).
 - If something is temporary or broken, keep it on your branch; do not merge it into `dev`.
+- Keep branches short-lived and delete them after merge.
 - Never commit secrets or large artifacts (use `.gitignore`, Git LFS, or DVC depending on the artifact).
 
 ---
@@ -258,18 +277,4 @@ If notebook diffs are too noisy:
 - Clean outputs: install `nbstripout`, then `nbstripout --install`
 - Better diffs: install `nbdime`, then `nbdime config-git --enable`
 
----
 
-## Troubleshooting
-
-### Merge conflicts
-
-Resolve the file, then:
-
-- `git add <conflicted-file>`
-- `git commit -m "fix: resolve merge conflict"`
-
-### Repo hygiene
-
-- Keep branches short-lived and delete them after merge.
-- Never commit secrets (treat `.gitignore` as part of your security posture).

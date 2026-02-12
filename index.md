@@ -7,7 +7,7 @@ nav_order: 0
 
 Practical notes for building solid foundations in Data, AI, and engineering.
 
-## Topics
+### Versioning
 
 - [Git workflow]({% link _pages/docs/git/git.md %})
 
