@@ -18,7 +18,8 @@ Practical notes for building solid foundations in Data, AI, and engineering.
 
 ### Machine Learning
 
-- [Metrics]({% link _pages/docs/machine-learning/metrics/metrics.md %})
+- [Experiments]({% link _pages/docs/machine-learning/experiments/experiments.md %})
+- [Evaluation]({% link _pages/docs/machine-learning/evaluation/evaluation.md %})
 
 ### GenAI
 

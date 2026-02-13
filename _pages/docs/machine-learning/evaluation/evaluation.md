@@ -1,10 +1,10 @@
 ---
 layout: post
-title: "Metrics: measure what matters"
+title: "Evaluation: measure and compare what matters"
 nav_order: 5
 ---
 
-Optimize for the wrong metric and a model that looks great on paper fails in production. The goal is not to know every metric — it is to pick the right few for each phase of the workflow and read the numbers correctly.
+Optimize for the wrong metric and a model that looks great on paper fails in production. The goal is not to know every metric — it is to pick the right few for each phase of the workflow, read the numbers correctly, and compare models with statistical rigor.
 
 ---
 
@@ -22,6 +22,12 @@ Optimize for the wrong metric and a model that looks great on paper fails in pro
   - [Model selection and evaluation](#model-selection-and-evaluation)
   - [Production monitoring](#production-monitoring-1)
 - [Reading the numbers](#reading-the-numbers)
+- [Diagnostic curves](#diagnostic-curves)
+  - [Learning curves](#learning-curves)
+  - [Calibration curves](#calibration-curves)
+- [Comparing results](#comparing-results)
+  - [Statistical significance](#statistical-significance)
+  - [Reading a comparison table](#reading-a-comparison-table)
 - [Custom metrics](#custom-metrics)
 
 ---
@@ -34,7 +40,7 @@ Optimize for the wrong metric and a model that looks great on paper fails in pro
 - **Threshold-dependent metric**: Evaluates the model at one specific cutoff (e.g., precision at 0.5). Use for final evaluation — it answers "how will this perform at the operating point I deploy?"
 - **Precision**: Of everything the model flagged as positive, how many actually were. High precision = few false alarms.
 - **Recall**: Of all actual positives, how many the model caught. High recall = few missed cases.
-- **Log loss (cross-entropy)**: Measures how well predicted probabilities match actual outcomes. Unlike AUC or MCC, it penalizes poorly calibrated probabilities — a confident wrong prediction is punished heavily. For a direct check of calibration (whether a predicted 70% is actually right 70% of the time), use calibration curves.
+- **Log loss (cross-entropy)**: Measures how well predicted probabilities match actual outcomes. Unlike AUC or MCC, it penalizes poorly calibrated probabilities — a confident wrong prediction is punished heavily. For a direct check of calibration (whether a predicted 70% is actually right 70% of the time), use [calibration curves](#calibration-curves).
 
 ---
 
@@ -47,6 +53,10 @@ Read every classification metric from this table:
 Actual positive        TP                     FN
 Actual negative        FP                     TN
 ```
+
+<p align="center">
+  <img src="{{ "/assets/images/plots/confusion_matrix.svg" | relative_url }}" alt="Confusion matrix heatmap showing TP, FN, FP, and TN counts">
+</p>
 
 - **TP (true positive)**: correctly caught.
 - **FN (false negative)**: missed — the model said "no" but it was "yes." Cost depends on domain (missed fraud, missed diagnosis).
@@ -78,6 +88,10 @@ To compare reliably, evaluate with cross-validation — typically 5-fold. Sklear
 
 AUC-ROC measures ranking quality: if you pick a random positive and a random negative, AUC is the probability that the model scores the positive higher. AUC = 1.0 is perfect separation, 0.5 is random — the model cannot tell the two apart. Technically, it plots recall (true positive rate) vs false positive rate across all thresholds. AUC says nothing about whether predicted probabilities are calibrated.
 
+<p align="center">
+  <img src="{{ "/assets/images/plots/roc_curve.svg" | relative_url }}" alt="ROC curves for strong, good, and weak classifiers against the random baseline">
+</p>
+
 How to interpret:
 - 0.9–1.0: outstanding discriminator.
 - 0.8–0.9: strong — usually production-ready.
@@ -108,7 +122,7 @@ How to interpret:
 
 **When probabilities matter → log loss.**
 
-AUC and MCC evaluate whether the model ranks or classifies correctly — neither tells you if the predicted probabilities are well-matched to reality. Log loss (cross-entropy) penalizes confident wrong predictions heavily. Note: log loss is a proper scoring rule that reflects both calibration and discrimination together — it cannot isolate one from the other. For a direct assessment of calibration, use calibration curves (reliability diagrams).
+AUC and MCC evaluate whether the model ranks or classifies correctly — neither tells you if the predicted probabilities are well-matched to reality. Log loss (cross-entropy) penalizes confident wrong predictions heavily. Note: log loss is a proper scoring rule that reflects both calibration and discrimination together — it cannot isolate one from the other. For a direct assessment of calibration, use [calibration curves](#calibration-curves) (reliability diagrams).
 
 `Log loss = −mean(y × log(p) + (1 − y) × log(1 − p))`
 
@@ -126,7 +140,7 @@ All metrics above extend to multiclass problems. The key decision is how to aver
 
 MCC works for multiclass without averaging — pass predictions directly to `sklearn.metrics.matthews_corrcoef`. Note: for multiclass, the minimum MCC is between −1 and 0 (depending on class distribution), not exactly −1.
 
-AUC-ROC extends via one-vs-rest (`ovr`) or one-vs-one (`ovo`) and requires probability scores. For imbalanced multiclass, prefer `ovo` with `average='macro'` — it is insensitive to class imbalance.
+AUC-ROC extends via one-vs-rest (`ovr`) or one-vs-one (`ovo`) and requires probability scores. For imbalanced multiclass, prefer `ovo` with `average='macro'` — it is less sensitive to class imbalance.
 
 ### Threshold tuning and evaluation
 
@@ -159,6 +173,10 @@ F1 assumes false positives and false negatives cost the same. If they do not, us
 3. Pick the threshold that matches your cost trade-off.
 4. Report precision, recall, and F1 at that threshold — not just the "best F1."
 
+<p align="center">
+  <img src="{{ "/assets/images/plots/precision_recall_threshold.svg" | relative_url }}" alt="Precision and recall as a function of decision threshold, with F1 curve and best-F1 point marked">
+</p>
+
 ### Production monitoring
 
 Models degrade. Data distributions shift, upstream features change, and user behavior evolves.
@@ -183,19 +201,23 @@ Performance metrics (F1, precision, recall) require ground truth labels. In many
 
 Unlike classification, regression does not have a threshold step. The same metrics serve both model selection and evaluation. As with classification, use cross-validation (typically 5-fold) to get reliable estimates — sklearn uses standard k-fold by default for regressors.
 
-**Default: MAE.**
+**Default → MAE.**
 
 The average size of the error, in the same unit as the target. Easy to interpret: "the model is off by 2.3 units on average." MAE treats all errors equally — it is robust to outliers and is the right default unless you have a specific reason to penalize large errors more.
 
 `MAE = mean(|y − ŷ|)`
 
-**When big misses are costly: RMSE.**
+**When big misses are costly → RMSE.**
 
 RMSE punishes large errors disproportionately — the squaring step makes sure a few big misses raise RMSE much more than they raise MAE. Use RMSE when a large error is much worse than a small one: demand forecasting (big underestimate = stockout), energy grid planning, structural engineering.
 
 `RMSE = √(mean((y − ŷ)²))`
 
-**For scale-independent comparison: R².**
+<p align="center">
+  <img src="{{ "/assets/images/plots/residuals.svg" | relative_url }}" alt="Residuals diagnostic plot showing actual vs predicted scatter and residual distribution">
+</p>
+
+**For scale-independent comparison → R².**
 
 R² answers one question: what proportion of the variance in the target does the model explain? R² = 1.0 is perfect, R² = 0 means the model is no better than predicting the mean.
 
@@ -211,6 +233,10 @@ How to interpret:
 - R² < 0: the model is worse than always predicting the mean. Something is fundamentally wrong.
 
 **Interpreting MAE and RMSE together.** RMSE is always ≥ MAE. The gap between them tells you something: if RMSE ≈ MAE, errors are uniform — the model misses by roughly the same amount everywhere. If RMSE >> MAE, a few large errors are pulling RMSE up — investigate the outliers, as they may reveal a data quality issue, a subpopulation the model cannot handle, or a feature gap. Report both: MAE tells you the typical error, RMSE tells you about the worst-case behavior.
+
+<p align="center">
+  <img src="{{ "/assets/images/plots/mae_vs_rmse.svg" | relative_url }}" alt="Grouped bar chart comparing MAE and RMSE across three regression models, highlighting outlier-driven RMSE inflation">
+</p>
 
 ### Production monitoring
 
@@ -238,6 +264,163 @@ Metrics are only useful if you interpret them in context.
 - **Read the standard deviation from cross-validation.** A mean AUC of 0.83 ± 0.02 is more trustworthy than 0.85 ± 0.08. High variance across folds means the model's performance depends heavily on which data it sees — the model may be unstable or the dataset too small. If the standard deviation is large relative to the difference between models, you cannot confidently pick a winner.
 - **Test set class balance must match deployment.** Precision, recall, and F1 depend on the ratio of positives to negatives. If your test set has 10% positives but production has 1%, precision will be worse in production than your test results suggest. AUC-ROC is invariant to class balance shifts, but threshold-dependent metrics are not.
 - **Small test sets lie.** A metric computed on 100 samples has wide confidence intervals. If you cannot increase the test set, use bootstrap resampling to quantify uncertainty.
+
+---
+
+## Diagnostic curves
+
+### Learning curves
+
+A learning curve plots train and validation scores as the training set grows. It answers two questions: is the model underfitting or overfitting, and would more data help?
+
+```python
+from sklearn.model_selection import learning_curve
+
+train_sizes, train_scores, val_scores = learning_curve(
+    estimator, X, y,
+    train_sizes=np.linspace(0.1, 1.0, 10),
+    cv=5,
+    scoring="roc_auc",
+    n_jobs=-1,
+)
+
+train_mean = train_scores.mean(axis=1)
+val_mean = val_scores.mean(axis=1)
+```
+
+<p align="center">
+  <img src="{{ "/assets/images/plots/learning_curve.svg" | relative_url }}" alt="Learning curve showing train and validation ROC AUC as training set size grows">
+</p>
+
+How to read the plot:
+
+- **Both curves converge high, small gap**: good fit. More data is unlikely to help — focus on feature engineering or model complexity.
+- **Both curves converge low**: underfitting. The model cannot capture the signal — try a more expressive model, add features, or reduce regularization.
+- **Large gap (train high, validation low)**: overfitting. The model memorizes training data — add regularization, reduce features, or get more data.
+- **Validation curve still rising at the right edge**: more training data would likely improve performance. This is one of the few cases where collecting more data is clearly the right move.
+
+### Calibration curves
+
+A calibration curve (reliability diagram) checks whether predicted probabilities match observed frequencies. A model that predicts 70% should be correct about 70% of the time.
+
+```python
+from sklearn.calibration import calibration_curve
+
+prob_true, prob_pred = calibration_curve(y_test, y_prob, n_bins=10)
+```
+
+<p align="center">
+  <img src="{{ "/assets/images/plots/calibration_curve.svg" | relative_url }}" alt="Calibration curve comparing logistic regression, random forest, and gradient boosting against perfect calibration">
+</p>
+
+How to read the plot:
+
+- **Points on the diagonal**: well-calibrated — predicted probabilities reflect reality.
+- **Points above the diagonal**: the model is underconfident — it predicts 0.3 but the true rate is higher.
+- **Points below the diagonal**: the model is overconfident — it predicts 0.8 but the true rate is lower.
+
+Common patterns by model type: logistic regression is usually well-calibrated out of the box. Tree ensembles (random forest, gradient boosting) and SVMs often produce poorly calibrated probabilities — random forests tend toward the center (underconfident at extremes), while gradient boosting can be overconfident.
+
+If calibration is poor and your use case depends on probability quality (risk scoring, bid optimization), apply post-hoc calibration:
+
+```python
+from sklearn.calibration import CalibratedClassifierCV
+
+calibrated = CalibratedClassifierCV(estimator, cv=5, method="isotonic")
+calibrated.fit(X_train, y_train)
+```
+
+Use `method="sigmoid"` (Platt scaling) when data is limited. Use `method="isotonic"` when you have enough data (1000+ samples) for a more flexible correction.
+
+---
+
+## Comparing results
+
+### Statistical significance
+
+A model with a higher mean score is not necessarily better — the difference might be noise. Use statistical tests to quantify confidence.
+
+**Paired tests compare models on the same data.** Each seed (or fold) produces a paired observation: model A's score and model B's score on the same split. Paired tests are more powerful than unpaired tests because they control for variance across splits.
+
+**How many seeds?** Hypothesis tests need enough paired observations to have statistical power. With fewer than 6 paired observations, the Wilcoxon signed-rank test cannot reach p < 0.05 — and a paired t-test with 4 degrees of freedom is barely better. Use 10+ seeds (or folds) when you need to make significance claims. With fewer, report bootstrap confidence intervals instead of p-values.
+
+**Paired t-test**: assumes the paired differences are approximately normally distributed. Use when you have 10+ seeds or folds and the differences look roughly symmetric.
+
+```python
+from scipy import stats
+
+# scores_a and scores_b: arrays of metric values, one per seed/fold
+t_stat, p_value = stats.ttest_rel(scores_a, scores_b)
+```
+
+**Wilcoxon signed-rank test**: non-parametric alternative. Makes no normality assumption. Use when the differences are clearly skewed or you cannot assume normality. Requires at least 6 paired observations to reach p < 0.05; in practice, 10+ for reasonable power.
+
+```python
+stat, p_value = stats.wilcoxon(scores_a, scores_b)
+```
+
+**Bootstrap confidence interval**: resample the paired differences with replacement to estimate the distribution of the mean difference. Reports a confidence interval rather than a p-value — often more informative, and the best option when you have few seeds (5–10).
+
+```python
+differences = scores_a - scores_b
+bootstrap_means = [
+    np.mean(np.random.choice(differences, size=len(differences), replace=True))
+    for _ in range(10000)
+]
+ci_lower, ci_upper = np.percentile(bootstrap_means, [2.5, 97.5])
+```
+
+<p align="center">
+  <img src="{{ "/assets/images/plots/bootstrap_ci.svg" | relative_url }}" alt="Bootstrap distribution of mean AUC differences with 95% confidence interval marked">
+</p>
+
+If the 95% confidence interval excludes zero, the difference is significant at α = 0.05.
+
+**Effect size**: statistical significance does not imply practical significance. A p-value of 0.01 with a 0.001 AUC difference means the difference is real but irrelevant. Report Cohen's d alongside p-values:
+
+```python
+d = np.mean(differences) / np.std(differences, ddof=1)
+```
+
+Interpretation: |d| < 0.2 negligible, 0.2–0.5 small, 0.5–0.8 medium, > 0.8 large.
+
+<p align="center">
+  <img src="{{ "/assets/images/plots/effect_size.svg" | relative_url }}" alt="Cohen's d effect size scale with three model comparisons plotted on it">
+</p>
+
+**Multiple comparisons**: when comparing more than two models, the probability of a false positive increases. If you compare 10 models pairwise, you run 45 tests — at α = 0.05, you expect ~2 false positives by chance. Apply the Holm-Bonferroni correction:
+
+```python
+from statsmodels.stats.multitest import multipletests
+
+rejected, corrected_p, _, _ = multipletests(p_values, method="holm")
+```
+
+### Reading a comparison table
+
+Present results so a reviewer can assess both magnitude and confidence:
+
+```
+Model               AUC (mean ± std)    Δ Control    p-value    Cohen's d
+─────────────────────────────────────────────────────────────────────────
+Control (XGBoost)   0.847 ± 0.012       —            —          —
+MLP                 0.839 ± 0.015       −0.008       0.142      −0.31
+LR + embeddings     0.852 ± 0.010       +0.005       0.038      +0.44
+No text features    0.821 ± 0.014       −0.026       0.003      −1.12
+```
+
+How to read this table:
+
+- **Mean ± std**: the average metric across seeds. The std tells you how stable the model is. A model with higher mean but much higher std may not be reliably better.
+- **Δ Control**: the difference from the baseline. Positive means better, negative means worse (assuming the metric is higher-is-better).
+- **p-value**: probability of observing this difference (or larger) by chance, assuming no real difference. Below 0.05 is the conventional threshold, but report the actual value — let the reader judge.
+- **Cohen's d**: effect size. Even if p < 0.05, a negligible effect size (|d| < 0.2) means the difference is not practically meaningful.
+
+<p align="center">
+  <img src="{{ "/assets/images/plots/model_comparison.svg" | relative_url }}" alt="Forest plot comparing four models with AUC mean, standard deviation, and p-values">
+</p>
+
+In the example: "No text features" is significantly worse (p = 0.003, large effect), confirming text features are important. "LR + embeddings" is significantly better (p = 0.038, small-to-medium effect) — worth investigating further. "MLP" is not significantly different from the control (p = 0.142).
 
 ---
 
