@@ -332,13 +332,12 @@ Finally, environment defaults and the runtime command are defined:
 ```dockerfile
 ENV ENVIRONMENT=dev
 ENV LOG_LEVEL=INFO
-ENV PORT=8080
 
-EXPOSE ${PORT}
+EXPOSE 8080
 CMD ["/app/.venv/bin/python", "main.py"]
 ```
 
-Environment defaults make the container self-describing and easy to configure in different environments. In the reference, the `ENV` lines define sensible defaults you can override at runtime, `EXPOSE ${PORT}` documents the expected container port, and the venv-based `CMD` ensures the locked environment is the one being executed.
+Environment defaults make the container self-describing and easy to configure in different environments. The `ENV` lines define sensible defaults you can override at runtime, `EXPOSE 8080` documents the expected container port, and the venv-based `CMD` ensures the locked environment is the one being executed.
 
 ---
 

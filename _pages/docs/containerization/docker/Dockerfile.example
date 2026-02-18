@@ -65,8 +65,7 @@ USER appuser
 
 ENV ENVIRONMENT=dev
 ENV LOG_LEVEL=INFO
-ENV PORT=8080
 
-EXPOSE ${PORT}
+EXPOSE 8080
 
 CMD ["/app/.venv/bin/python", "main.py"]
