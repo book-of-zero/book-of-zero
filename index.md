@@ -5,7 +5,7 @@ permalink: /
 nav_order: 0
 ---
 
-Practical notes for building solid foundations in Data, AI, and engineering.
+Practical notes for building foundations in AI, Data, and engineering.
 
 ### Versioning
 
@@ -21,7 +21,7 @@ Practical notes for building solid foundations in Data, AI, and engineering.
 - [Experiments]({% link _pages/docs/machine-learning/experiments/experiments.md %})
 - [Evaluation]({% link _pages/docs/machine-learning/evaluation/evaluation.md %})
 
-### GenAI
+### Generative AI
 
 - [System prompt]({% link _pages/docs/genai/system-prompt/system-prompt.md %})
 
