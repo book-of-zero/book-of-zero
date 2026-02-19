@@ -28,21 +28,18 @@ require(["gitbook", "jquery"], function (gitbook, $) {
     update();
   }
 
-  function changeColorTheme(configName, e) {
-    if (e && typeof e.preventDefault === "function") e.preventDefault();
-
+  function setThemeId(themeId) {
     var $book = gitbook.state.$book;
     var $header = $(".book-body > .book-header");
 
-    // Remove any previously applied color theme
+    // Clear any existing color theme classes
     $book[0].className = $book[0].className.replace(/\bcolor-theme-\S+/g, "");
     if ($header.length !== 0) {
       $header[0].className = $header[0].className.replace(/\bcolor-theme-\S+/g, "");
     }
 
-    // Apply new color theme
-    var themeId = getThemeId(configName);
-    fontState.theme = themeId === 1 ? 0 : themeId; // hard-block sepia
+    // Only support 0 (light) and 2 (dark)
+    fontState.theme = themeId === 2 ? 2 : 0;
 
     if (fontState.theme !== 0) {
       $book.addClass("color-theme-" + fontState.theme);
@@ -50,6 +47,18 @@ require(["gitbook", "jquery"], function (gitbook, $) {
     }
 
     saveFontSettings();
+  }
+
+  function changeColorTheme(configName, e) {
+    if (e && typeof e.preventDefault === "function") e.preventDefault();
+    var themeId = getThemeId(configName);
+    setThemeId(themeId);
+  }
+
+  function toggleTheme(e) {
+    if (e && typeof e.preventDefault === "function") e.preventDefault();
+    var isDark = fontState && fontState.theme === 2;
+    setThemeId(isDark ? 0 : 2);
   }
 
   function update() {
@@ -103,19 +112,7 @@ require(["gitbook", "jquery"], function (gitbook, $) {
       icon: "fa fa-adjust",
       label: "Theme",
       className: "font-settings",
-      dropdown: [
-        [
-          $.map(THEMES, function (theme) {
-            return {
-              text: theme.text,
-              className: theme.config,
-              onClick: function (e) {
-                return changeColorTheme(theme.config, e);
-              },
-            };
-          }),
-        ],
-      ],
+      onClick: toggleTheme,
     });
   }
 
