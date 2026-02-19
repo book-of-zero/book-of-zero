@@ -89,6 +89,7 @@ Optional build arguments:
 - `--build-arg PYTHON_VERSION=3.13`
 - `--build-arg UV_IMAGE=ghcr.io/astral-sh/uv:latest`
 - `--build-arg UID=90001`
+- `--build-arg PORT=8080`
 
 In enterprise environments, also consider:
 
@@ -179,6 +180,7 @@ Build arguments let you reuse the same Dockerfile across environments and projec
 ARG PYTHON_VERSION=3.13
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:latest
 ARG UID=90001
+ARG PORT=8080
 ARG PACKAGE_NAME=myapp
 ARG BUILD_DATE=""
 ARG VCS_REF=""
@@ -188,6 +190,7 @@ ARG VCS_URL=""
 - **Python base image pin**: `PYTHON_VERSION`
 - **Tooling image pin**: `UV_IMAGE` (set this to a version tag or digest in CI for repeatability)
 - **Runtime user id**: `UID`
+- **Container port**: `PORT` (used in the `EXPOSE` directive)
 - **Which package directory to copy**: `PACKAGE_NAME`
 - **Image build timestamp (traceability)**: `BUILD_DATE` (used for `org.opencontainers.image.created`)
 - **Source revision (traceability)**: `VCS_REF` (used for `org.opencontainers.image.revision`). `VCS` stands for Version Control System (commonly Git).
@@ -333,11 +336,11 @@ Finally, environment defaults and the runtime command are defined:
 ENV ENVIRONMENT=dev
 ENV LOG_LEVEL=INFO
 
-EXPOSE 8080
+EXPOSE ${PORT}
 CMD ["/app/.venv/bin/python", "main.py"]
 ```
 
-Environment defaults make the container self-describing and easy to configure in different environments. The `ENV` lines define sensible defaults you can override at runtime, `EXPOSE 8080` documents the expected container port, and the venv-based `CMD` ensures the locked environment is the one being executed.
+Environment defaults make the container self-describing and easy to configure in different environments. The `ENV` lines define sensible defaults you can override at runtime, `EXPOSE ${PORT}` documents the expected container port (defaulting to 8080), and the venv-based `CMD` ensures the locked environment is the one being executed.
 
 ---
 
