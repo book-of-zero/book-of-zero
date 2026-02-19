@@ -21,6 +21,7 @@ Git is the backbone of collaborative development. It also protects reproducibili
 - [State migrations and infrastructure changes](#state-migrations-and-infrastructure-changes)
 - [Hotfix](#hotfix)
 - [Partial merge](#partial-merge)
+- [Cleaning up history](#cleaning-up-history)
 - [Stash and undo](#stash-and-undo)
 - [Reproducibility](#reproducibility)
 
@@ -234,6 +235,16 @@ When you need specific commits or files on `staging` without promoting everythin
 - Open a PR: `<type>/<topic>` → `staging`
 
 Then promote `staging` → `main` via the normal release PR.
+
+---
+
+## Cleaning up history
+
+Use **squash-merge** when merging PRs to keep `dev`, `staging`, and `main` clean with one commit per feature.
+
+When merging a PR, select **"Squash and merge"**. This collapses all commits from your feature branch into one commit with a clean message.
+
+Commit freely during development, then squash everything when merging.
 
 ---
 
