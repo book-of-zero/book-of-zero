@@ -21,6 +21,11 @@ Optimize for the wrong metric and a model that looks great on paper fails in pro
   - [Baseline](#baseline-1)
   - [Model selection and evaluation](#model-selection-and-evaluation)
   - [Production monitoring](#production-monitoring-1)
+- [Workflow: ranking](#workflow-ranking)
+  - [Baseline](#baseline-2)
+  - [Model selection and evaluation](#model-selection-and-evaluation-1)
+  - [Beyond accuracy: diversity and coverage](#beyond-accuracy-diversity-and-coverage)
+  - [Production monitoring](#production-monitoring-2)
 - [Reading the numbers](#reading-the-numbers)
 - [Diagnostic curves](#diagnostic-curves)
   - [Learning curves](#learning-curves)
@@ -268,6 +273,128 @@ As with classification, performance metrics require ground truth labels. When la
 - Monitor **error percentiles** (P90, P99) over time. Rising tail percentiles reveal growing outlier errors that MAE alone can mask — a subpopulation may be diverging from training data.
 - Compare live R² against the training R². A large drop signals that the model's explanatory power has degraded.
 - Check for **feature drift**: if the distribution of key input features shifts significantly from training, the model's predictions may degrade before the target metric shows it.
+
+---
+
+## Workflow: ranking
+
+When you are not just predicting a number, but ordering items (search results, product recommendations, feeds), classification and regression metrics fail. A model might predict scores with high RMSE, but if it still sorts the most relevant items to the top, it is a perfect ranker.
+
+### Baseline
+
+- **Popularity-based baseline**: Always recommend the globally most popular items. In many domains, this is surprisingly hard to beat.
+- **Random baseline**: Shuffle the items randomly.
+
+### Model selection and evaluation
+
+Ranking metrics evaluate **position**. Being wrong at position 1 is heavily penalized; being wrong at position 100 barely matters.
+
+**When there is only one right answer → MRR.**
+
+Mean Reciprocal Rank is used when the user is looking for a single specific item (e.g., a "feeling lucky" search, finding a specific song, or answering a factual question). It is the average of `1 / rank` for the first relevant item.
+
+`MRR = mean(1 / rank_i)`
+
+How to interpret: MRR = 1.0 means the relevant item is always first. MRR = 0.5 means it is usually second.
+
+**When there are multiple right answers (binary relevance) → MAP.**
+
+Mean Average Precision is used when there are multiple relevant items, but relevance is binary (yes/no). It rewards putting *all* relevant items as high as possible. It computes the Average Precision for each query (the area under the precision-recall curve for that specific ranking), and then takes the mean across all queries.
+
+**When relevance has degrees (graded relevance) → NDCG.**
+
+Normalized Discounted Cumulative Gain is the gold standard for modern search and recommendation. Unlike MAP, which assumes an item is either relevant or not, NDCG handles graded relevance (e.g., 5-star ratings, "highly relevant" vs "somewhat relevant").
+
+It sums the relevance scores of the ranked items, discounting them logarithmically by their position (`1 / log2(rank + 1)`), and then normalizes against the ideal possible ranking for that query so the score is between 0 and 1.
+
+How to interpret:
+- Evaluated at a cutoff K (e.g., **NDCG@10**), because users rarely look past the first page of results.
+- NDCG = 1.0 is a perfect ranking.
+- Useful for comparing algorithms, but harder to explain to business stakeholders than simple conversion metrics.
+
+```python
+from sklearn.metrics import ndcg_score
+
+# Graded relevance (e.g., 5-star ratings or human labels)
+y_true = [[5, 3, 1, 0, 2]]
+# Model's predicted ranking scores
+y_score = [[0.9, 0.7, 0.5, 0.3, 0.1]]
+
+ndcg_10 = ndcg_score(y_true, y_score, k=10)
+```
+
+**For simpler evaluation and monitoring → Precision@K and Recall@K.**
+
+These are complementary to the ranking-aware metrics above. They are easier to explain to non-technical stakeholders and widely used in production monitoring alongside NDCG.
+
+`Precision@K = (# relevant items in top K) / K`
+
+`Recall@K = (# relevant items in top K) / (total # relevant items)`
+
+Precision@K tells you what fraction of your recommendations are good. Recall@K tells you what fraction of all good items you surfaced. If you recommend 10 items and 7 are relevant, Precision@10 = 0.7. If there were 20 total relevant items in the catalog, Recall@10 = 7/20 = 0.35.
+
+Unlike NDCG and MAP, these metrics ignore the order within the top K — they only care whether relevant items made it into the list, not where they appear. Use Precision@K when the user's attention is limited (e.g., showing only 5 products) and you want to ensure the shortlist is high-quality. Use Recall@K when coverage matters — in multi-label classification or when you need to ensure all relevant items get surfaced.
+
+**Hit Rate@K** is the binary version: did at least one relevant item appear in the top K? Useful for "single-intent" queries where the user needs any one correct answer.
+
+### Beyond accuracy: diversity and coverage
+
+Pure accuracy optimization creates **filter bubbles** — users see only variations of what they already like, the catalog concentrates on a few popular items, and discovery breaks down. Enterprise recommendation systems must balance relevance with diversity and coverage.
+
+**Coverage**: what proportion of the catalog gets recommended over time.
+
+`Coverage = (# unique items recommended) / (# items in catalog)`
+
+If your catalog has 10,000 products but 90% of recommendations come from the same 100 popular items, coverage = 0.01 — you have a popularity bias problem. High coverage ensures the long tail gets exposure. For marketplaces (Etsy, Airbnb), this is a business requirement — sellers expect visibility.
+
+Track coverage over rolling windows (e.g., daily, weekly). A coverage drop often signals that the model is converging on a narrow set of items. This is especially common after retraining on click data — clicks reinforce popular items, creating a feedback loop.
+
+**Diversity**: how different the recommended items are from each other within a single list.
+
+Intra-List Diversity (ILD) measures the average pairwise dissimilarity between items in a recommendation:
+
+`ILD = (1 / (K × (K − 1))) × Σ dissimilarity(item_i, item_j)` for all pairs in the top K.
+
+Dissimilarity can be cosine distance between item embeddings, category mismatch, or any domain-specific measure. High diversity prevents the "10 nearly identical recommendations" problem.
+
+**Personalization**: how different recommendations are across users.
+
+If every user gets the same top-10 list, personalization is zero — the system is just a popularity ranker. Measure this as the average Jaccard distance between recommendation lists for different users.
+
+**Trade-offs.** Optimizing purely for NDCG often reduces diversity — the model learns to recommend safe, popular items. Use a composite objective (e.g., `0.7 × NDCG + 0.3 × diversity`) or apply post-processing re-ranking to boost diversity while maintaining a minimum relevance threshold. Many production systems use a two-stage approach: retrieve candidates for relevance, then re-rank for diversity.
+
+### Production monitoring
+
+Ground truth relevance is rarely available immediately, so track user behavior and catalog health.
+
+**Engagement:**
+
+- **Click-Through Rate (CTR)**: Percentage of queries with clicks. Dropping CTR signals degrading relevance.
+- **Click position**: Average rank of clicked items. Rising position means users must scroll further. Correct for **position bias** (users click top results regardless of relevance).
+- **Dwell time**: Time spent after clicking. High CTR + low dwell time = misleading rankings.
+- **Session success rate**: Percentage of sessions where users find what they need (purchase, long watch, no re-query). Better satisfaction proxy than CTR alone.
+- **Zero-result rate**: Queries with no clicks. Spikes indicate retrieval failure or intent mismatch.
+- **Conversion rate**: Whether clicks lead to business outcomes (purchases, sign-ups, watch time).
+
+**Catalog health:**
+
+- **Coverage**: Percentage of catalog recommended over rolling windows. Drops signal convergence on popular items.
+- **Popularity bias**: If 80% of traffic → 5% of items, you have a long-tail problem. Critical for marketplaces.
+- **Freshness**: Age distribution of recommendations. Prevents new content/creators from being buried.
+
+**Rapid evaluation:**
+
+Offline metrics (NDCG) do not always correlate with business metrics (revenue). A/B tests are expensive (weeks, large traffic). Use **interleaving** first.
+
+**Interleaving** mixes two models in one session (items 1,3,5 from model A; 2,4,6 from model B) and tracks which gets more clicks. **100× more sensitive than A/B testing** — detect differences with small traffic in hours vs weeks. Used by Airbnb, Google, Bing to identify candidates before full A/B tests.
+
+Once interleaving shows a winner, validate with A/B test for business impact.
+
+**Fairness:**
+
+- Track metrics by user segment (geography, demographic, device). Overall NDCG can hide subgroup failures.
+- Monitor exposure distribution for marketplaces — ensure diverse sellers get visibility.
+- Watch for feedback loops: clicks reinforce popularity bias. Inject periodic exploration.
 
 ---
 
