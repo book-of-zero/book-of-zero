@@ -39,7 +39,8 @@ Optimize for the wrong metric and a model that looks great on paper fails in pro
 - **Threshold-independent metric**: Evaluates the model across all thresholds (e.g., AUC). Use for model comparison — it separates "is this a good model?" from "where do I set the cutoff?"
 - **Threshold-dependent metric**: Evaluates the model at one specific cutoff (e.g., precision at 0.5). Use for final evaluation — it answers "how will this perform at the operating point I deploy?"
 - **Precision**: Of everything the model flagged as positive, how many actually were. High precision = few false alarms.
-- **Recall**: Of all actual positives, how many the model caught. High recall = few missed cases.
+- **Recall (Sensitivity)**: Of all actual positives, how many the model caught. High recall = few missed cases.
+- **Specificity (True Negative Rate)**: Of all actual negatives, how many the model correctly ignored. Often paired with sensitivity in medical and manufacturing domains. High specificity = few false alarms in the negative class.
 - **Log loss (cross-entropy)**: Measures how well predicted probabilities match actual outcomes. Unlike AUC or MCC, it penalizes poorly calibrated probabilities — a confident wrong prediction is punished heavily. For a direct check of calibration (whether a predicted 70% is actually right 70% of the time), use [calibration curves](#calibration-curves).
 
 ---
@@ -83,6 +84,8 @@ Establish the baseline first. It prevents you from celebrating a "92% accuracy" 
 You are comparing models or hyperparameter sets. Use threshold-independent metrics so the comparison is fair — you are judging the model's ranking ability, not a particular cutoff.
 
 To compare reliably, evaluate with cross-validation — typically 5-fold. Sklearn uses stratified k-fold by default for classifiers, preserving class proportions in each fold. A single train/test split can be noisy; cross-validation gives you a mean and standard deviation for each metric.
+
+**Beware of naive splitting.** If multiple rows belong to the same entity (e.g., five scans of the same patient), standard cross-validation will put the patient in both the train and test sets, leaking data. Use `GroupKFold` to ensure all records for an entity stay together. For time-series data, random splitting leaks the future to predict the past; use `TimeSeriesSplit` or an out-of-time test set.
 
 **Balanced data → AUC-ROC.**
 
@@ -166,6 +169,10 @@ Use when: each positive prediction triggers an expensive action (manual review, 
 
 F1 assumes false positives and false negatives cost the same. If they do not, use F-beta with a beta > 1 (favor recall) or beta < 1 (favor precision).
 
+**When the negative class is important → use Specificity.**
+
+`Specificity = TN / (TN + FP)`. Use this alongside recall (sensitivity) when the negative class represents something critical, such as healthy patients in a medical test. High specificity means few false alarms.
+
 **How to pick the threshold in practice:**
 
 1. Plot precision and recall as a function of threshold.
@@ -217,6 +224,20 @@ RMSE punishes large errors disproportionately — the squaring step makes sure a
   <img src="{{ "/assets/images/plots/residuals.svg" | relative_url }}" alt="Residuals diagnostic plot showing actual vs predicted scatter and residual distribution">
 </p>
 
+**When business needs a percentage → MAPE.**
+
+Mean Absolute Percentage Error translates errors into percentages, making it much easier to explain to non-technical stakeholders ("the forecast is off by 5% on average"). However, MAPE is fundamentally flawed if the actual values can be zero (where it divides by zero and explodes) or close to zero. It also penalizes overestimates more heavily than underestimates. Use it for reporting, but be cautious about optimizing for it directly.
+
+`MAPE = mean(|(y − ŷ) / y|)`
+
+<br>
+
+**For targets with heavy right tails → RMSLE.**
+
+Root Mean Squared Logarithmic Error is used when the target spans several orders of magnitude (prices, income, counts). An error of $100 matters a lot if the true price is $50, but is irrelevant if the true price is $500,000. RMSLE penalizes relative differences rather than absolute ones, and it penalizes underestimates more heavily than overestimates. 
+
+`RMSLE = √(mean((log(y + 1) − log(ŷ + 1))²))`
+
 **For scale-independent comparison → R².**
 
 R² answers one question: what proportion of the variance in the target does the model explain? R² = 1.0 is perfect, R² = 0 means the model is no better than predicting the mean.
@@ -257,6 +278,7 @@ Metrics are only useful if you interpret them in context.
 - **Compare train and validation metrics.** If the training score is high and the validation score is low, the model is overfitting — add regularization, reduce features, or get more data. If both are low, it is underfitting. A small gap with high scores on both is a good fit.
 - **Always compare to the baseline.** An F1 of 0.85 means nothing in isolation. If the majority-class baseline gives 0.80, the model adds almost no value.
 - **Check both classes.** A high overall score can hide poor performance on the minority class. Always look at per-class precision and recall.
+- **Check the slices (subgroup analysis).** A model might have a fantastic overall MAE or AUC, but perform terribly for a specific geography, demographic, or customer segment. Global metrics hide local failures. Always evaluate the worst-performing slice before deploying, especially for models that impact humans.
 - **Compare MAE and RMSE.** If RMSE is much larger than MAE, you have an outlier problem — do not average it away.
 - **Negative MCC: check the magnitude.** Slightly negative (near zero) is likely noise. Strongly negative means the model is systematically inverted — check for label errors, data leakage, or a flipped target. If the inversion is confirmed, flip the predictions.
 - **Context determines "good enough."** An AUC of 0.75 can be strong for a hard medical imaging task and terrible for a spam filter. There is no universal threshold for a "good" score.
