@@ -14,6 +14,8 @@ This guide covers the practices that make ML experiments reproducible, comparabl
 
 - [Key concepts](#key-concepts)
 - [Reproducibility contract](#reproducibility-contract)
+  - [Source control](#source-control)
+  - [Data immutability](#data-immutability)
   - [Seeds](#seeds)
   - [Environment pinning](#environment-pinning)
   - [Determinism boundaries](#determinism-boundaries)
@@ -21,6 +23,7 @@ This guide covers the practices that make ML experiments reproducible, comparabl
   - [Three sets, three purposes](#three-sets-three-purposes)
   - [No leakage](#no-leakage)
   - [Group-aware splits](#group-aware-splits)
+  - [Early stopping](#early-stopping)
 - [Configuration management](#configuration-management)
   - [Config structure](#config-structure)
   - [Config model](#config-model)
@@ -51,7 +54,19 @@ This guide covers the practices that make ML experiments reproducible, comparabl
 
 ## Reproducibility contract
 
-A result that cannot be reproduced cannot be defended. Reproducibility has three layers: seed control, environment pinning, and awareness of determinism boundaries.
+A result that cannot be reproduced cannot be defended. Reproducibility has five layers: source control, data immutability, seed control, environment pinning, and awareness of determinism boundaries.
+
+### Source control
+
+MLflow automatically logs the git commit hash, but this is a false guarantee if you run experiments with uncommitted changes. The "dirty working tree" vulnerability means the logged hash points to code that is different from what actually ran. 
+
+To enforce strict source control, either fail the run if `git status --porcelain` is not empty, or explicitly log the `git diff` as an MLflow artifact.
+
+### Data immutability
+
+Pinning code and environment is useless if the underlying data changes. Treat training data as immutable. Overwriting a file like `features_v1.parquet` permanently breaks reproducibility for every prior experiment that relied on it.
+
+Use append-only storage or a data versioning tool like DVC to enforce data immutability. If a dataset must change, write it as `features_v2.parquet` and update the experiment configuration.
 
 ### Seeds
 
@@ -63,7 +78,7 @@ Control randomness by passing `random_state` explicitly to every estimator and s
 from sklearn.model_selection import StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 
-cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+cv = StratifiedKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=seed)
 model = RandomForestClassifier(n_estimators=500, random_state=seed)
 ```
 
@@ -186,6 +201,46 @@ results = cross_validate(pipe, X_train, y_train, cv=cv, groups=groups[train_idx]
 
 If your data has no natural grouping (each row is an independent observation), standard `train_test_split` and `StratifiedKFold` are correct. When groups and class imbalance both matter, use `StratifiedGroupKFold`.
 
+### Early stopping
+
+Iterative algorithms like gradient boosting (XGBoost, LightGBM) or deep learning require a separate validation set inside the training loop to monitor performance and halt training before overfitting begins. This is distinct from the validation folds used in cross-validation for model selection — early stopping uses a dedicated split within each training fold.
+
+When using cross-validation, passing this internal validation set through a scikit-learn `Pipeline` can be notoriously tricky, as pipelines do not natively map sample-level `fit_params` to the estimator for the held-out fold.
+
+To implement early stopping during cross-validation properly, you must either manually iterate over the fold indices and pass `eval_set=[(X_val, y_val)]` directly to the estimator's `fit` method, or use a library-specific integration (like `xgboost.sklearn`):
+
+```python
+from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_auc_score
+from xgboost import XGBClassifier
+
+cv = StratifiedKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=seed)
+
+for fold, (train_idx, val_idx) in enumerate(cv.split(X_train, y_train)):
+    X_fold_train, X_fold_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
+    y_fold_train, y_fold_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
+
+    # Fit preprocessing on training fold only
+    scaler = StandardScaler()
+    X_fold_train_scaled = scaler.fit_transform(X_fold_train)
+    X_fold_val_scaled = scaler.transform(X_fold_val)
+
+    # Pass eval_set directly to the estimator
+    model = XGBClassifier(**cfg.model.params, random_state=seed, early_stopping_rounds=20)
+    model.fit(
+        X_fold_train_scaled, y_fold_train,
+        eval_set=[(X_fold_val_scaled, y_fold_val)],
+        verbose=False
+    )
+
+    # Evaluate on the held-out fold
+    score = roc_auc_score(y_fold_val, model.predict_proba(X_fold_val_scaled)[:, 1])
+    print(f"Fold {fold}: {score:.4f} (stopped at iteration {model.best_iteration})")
+```
+
+Never use the final test set for early stopping — this turns the test set into a validation set and leaks information directly into the model's stopping criteria.
+
 ---
 
 ## Configuration management
@@ -244,7 +299,7 @@ class ModelConfig(BaseModel):
 
 class ExperimentConfig(BaseModel):
     experiment_name: str
-    seeds: list[int] = Field(default=[42], min_length=1)
+    seeds: list[int] = Field(default=[42, 123, 456, 789, 1024], min_length=1)
     data: DataConfig
     model: ModelConfig
     cv_splits: int = Field(default=5, ge=2)
@@ -313,9 +368,10 @@ Autolog captures: estimator parameters (via `get_params(deep=True)`), training m
 Add explicit logging for config snapshots, custom metrics, tags, and artifacts that autolog does not cover. `mlflow.log_params()` only accepts flat dicts — nested dicts get stringified into unreadable blobs. Log each level explicitly:
 
 ```python
+import time
 import mlflow
 import pandas as pd
-from sklearn.model_selection import cross_validate, StratifiedKFold, train_test_split
+from sklearn.model_selection import cross_validate, cross_val_predict, StratifiedKFold, train_test_split
 from xgboost import XGBClassifier
 
 config_path = "configs/baseline.yaml"
@@ -340,9 +396,20 @@ for seed in cfg.seeds:
         # Tags for filtering in the UI (git hash is auto-logged)
         mlflow.set_tag("data_version", "v1")
 
+        start_time = time.time()
+
         model = XGBClassifier(**cfg.model.params, random_state=seed)
         cv = StratifiedKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=seed)
+        
         results = cross_validate(model, X_train, y_train, cv=cv, scoring=cfg.scoring)
+        
+        # Out-of-fold predictions enable ensembling and deep error analysis without retraining
+        oof_preds = cross_val_predict(model, X_train, y_train, cv=cv, method="predict_proba")[:, 1]
+        
+        mlflow.log_metric("training_duration_seconds", time.time() - start_time)
+
+        pd.DataFrame({"oof_pred": oof_preds}).to_parquet(f"oof_seed{seed}.parquet")
+        mlflow.log_artifact(f"oof_seed{seed}.parquet")
 
         mlflow.log_metric(f"mean_{cfg.scoring}", results["test_score"].mean())
         mlflow.log_metric(f"std_{cfg.scoring}", results["test_score"].std())
@@ -351,15 +418,16 @@ for seed in cfg.seeds:
         for i, score in enumerate(results["test_score"]):
             mlflow.log_metric(f"fold_{cfg.scoring}", score, step=i)
 
-        # Log the config file as an artifact (reproduces the run)
-        mlflow.log_artifact(config_path)
+# Log the config file once as an artifact (outside the seed loop)
+with mlflow.start_run(run_name="config_snapshot"):
+    mlflow.log_artifact(config_path)
 ```
 
 | Category | What | How |
 |----------|------|-----|
 | Parameters | Seed, model hyperparams, scoring | `mlflow.log_params(...)` or autolog |
-| Metrics | CV mean, std, per-fold scores, test metrics | `mlflow.log_metric(...)` or autolog |
-| Artifacts | Model, config file, plots | `mlflow.log_artifact(...)` or autolog |
+| Metrics | CV mean, std, per-fold scores, test metrics, duration | `mlflow.log_metric(...)` or autolog |
+| Artifacts | Model, config file, OOF predictions | `mlflow.log_artifact(...)` or autolog |
 | Tags | Data version, custom metadata | `mlflow.set_tag(...)` (git hash is auto-logged) |
 
 ### Organizing runs
@@ -478,7 +546,7 @@ def objective(trial):
         scores = cross_val_score(pipe, X_train, y_train, cv=cv, scoring=cfg.scoring)
         mean_score = scores.mean()
 
-        mlflow.log_metric("val_auc", mean_score)
+        mlflow.log_metric(f"val_{cfg.scoring}", mean_score)
 
     return mean_score
 
@@ -492,7 +560,7 @@ with mlflow.start_run(run_name="hparam_search"):
     study.optimize(objective, n_trials=100)
 
     mlflow.log_params(study.best_params)
-    mlflow.log_metric("best_val_auc", study.best_value)
+    mlflow.log_metric(f"best_val_{cfg.scoring}", study.best_value)
 ```
 
 Each trial is a nested MLflow run under a parent search run, so the full history is visible in the MLflow UI.
@@ -511,7 +579,8 @@ import yaml
 best_cfg = cfg.model_copy(deep=True)
 best_cfg.model.params = study.best_params
 
-Path("configs/best_xgboost.yaml").write_text(
+config_path = "configs/best_xgboost.yaml"
+Path(config_path).write_text(
     yaml.dump(best_cfg.model_dump(), default_flow_style=False)
 )
 ```
