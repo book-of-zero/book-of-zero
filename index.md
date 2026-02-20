@@ -5,7 +5,7 @@ permalink: /
 nav_order: 0
 ---
 
-> *"The best way to predict the future is to invent it."*  
+> ***"The best way to predict the future is to invent it."***
 > — Alan Kay
 
 <br>
