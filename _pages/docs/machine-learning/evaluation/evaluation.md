@@ -36,7 +36,7 @@ Optimize for the wrong metric and a model that looks great on paper fails in pro
   - [Statistical significance](#statistical-significance)
   - [Reading a comparison table](#reading-a-comparison-table)
 - [The business evaluation](#the-business-evaluation)
-  - [Expected Value (EV)](#expected-value-ev)
+  - [Expected value (EV)](#expected-value-ev)
   - [The complexity tax](#the-complexity-tax)
   - [Interpretability constraints](#interpretability-constraints)
   - [Offline vs. online performance](#offline-vs-online-performance)
@@ -634,11 +634,11 @@ In the example: "No text features" is significantly worse (p = 0.003, large effe
 
 The model with the highest AUC or lowest RMSE on the cross-validation leaderboard is rarely the best model to deploy. In production, predictive accuracy is just one variable in a larger business equation. Before deploying, evaluate the model against these operational constraints.
 
-### Expected Value (EV)
+### Expected value (EV)
 
-A model is only worth deploying if its Return on Investment (ROI) is positive. To calculate this, translate the confusion matrix into dollars using an Expected Value framework.
+A model is only worth deploying if its Return on Investment (ROI) is positive. To calculate this, translate the confusion matrix into dollars using an expected value framework.
 
-`EV = p(TP) × Value(TP) + p(TN) × Value(TN) + p(FP) × Cost(FP) + p(FN) × Cost(FN)`
+`EV = p(TP) × Value(TP) + p(TN) × Value(TN) - p(FP) × Cost(FP) - p(FN) × Cost(FN)`
 
 If the expected value of using the model is lower than the expected value of your current baseline (which might be a simple rules engine, or a manual review process), the model is a failure, regardless of its statistical significance.
 
