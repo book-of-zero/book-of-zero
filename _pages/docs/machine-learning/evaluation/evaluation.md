@@ -29,10 +29,18 @@ Optimize for the wrong metric and a model that looks great on paper fails in pro
 - [Reading the numbers](#reading-the-numbers)
 - [Diagnostic curves](#diagnostic-curves)
   - [Learning curves](#learning-curves)
+  - [Validation curves](#validation-curves)
   - [Calibration curves](#calibration-curves)
+  - [Cumulative gains and lift curves](#cumulative-gains-and-lift-curves)
 - [Comparing results](#comparing-results)
   - [Statistical significance](#statistical-significance)
   - [Reading a comparison table](#reading-a-comparison-table)
+- [The business evaluation](#the-business-evaluation)
+  - [Expected Value (EV)](#expected-value-ev)
+  - [The complexity tax](#the-complexity-tax)
+  - [Interpretability constraints](#interpretability-constraints)
+  - [Offline vs. online performance](#offline-vs-online-performance)
+  - [Time-to-value](#time-to-value)
 - [Custom metrics](#custom-metrics)
 
 ---
@@ -448,6 +456,30 @@ How to read the plot:
 - **Large gap (train high, validation low)**: overfitting. The model memorizes training data — add regularization, reduce features, or get more data.
 - **Validation curve still rising at the right edge**: more training data would likely improve performance. This is one of the few cases where collecting more data is clearly the right move.
 
+### Validation curves
+
+While a learning curve shows performance vs. *amount of data*, a validation curve plots train and validation scores against varying values of a single hyperparameter (e.g., tree depth, regularization strength). It is the primary visual tool for diagnosing whether your model's complexity is appropriate for the data.
+
+```python
+from sklearn.model_selection import validation_curve
+
+param_range = np.logspace(-3, 2, 6)
+train_scores, val_scores = validation_curve(
+    estimator, X, y,
+    param_name="C",
+    param_range=param_range,
+    cv=5,
+    scoring="roc_auc",
+    n_jobs=-1,
+)
+```
+
+How to read the plot:
+
+- **High bias (underfitting)**: Both training and validation curves are low. The model is too simple to capture the underlying pattern (e.g., a tree with max depth 1, or extreme regularization).
+- **The sweet spot**: The point where the validation score peaks before beginning to decline. This is your optimal hyperparameter value.
+- **High variance (overfitting)**: The training score continues to climb (often approaching perfect performance), but the validation score drops or flatlines. The model is too complex and has begun memorizing noise in the training set.
+
 ### Calibration curves
 
 A calibration curve (reliability diagram) checks whether predicted probabilities match observed frequencies. A model that predicts 70% should be correct about 70% of the time.
@@ -480,6 +512,31 @@ calibrated.fit(X_train, y_train)
 ```
 
 Use `method="sigmoid"` (Platt scaling) when data is limited. Use `method="isotonic"` when you have enough data (1000+ samples) for a more flexible correction.
+
+### Cumulative gains and lift curves
+
+When evaluating a classification model for a targeted campaign — e.g., you can only afford to manually review 1,000 transactions for fraud, or call 10% of your sales leads — you need to know how well the model concentrates true positives at the very top of its ranked predictions.
+
+A **Cumulative Gains curve** plots the percentage of the total population targeted (X-axis) against the percentage of all actual positive cases found (Y-axis).
+
+```python
+import scikitplot as skplt
+import matplotlib.pyplot as plt
+
+# y_prob should contain probabilities for both classes
+# e.g., y_prob = model.predict_proba(X_test)
+skplt.metrics.plot_cumulative_gain(y_test, y_prob)
+plt.show()
+```
+
+How to read a Cumulative Gains plot:
+
+- **The diagonal (random baseline)**: If you target a random 20% of users, you will find 20% of the true positives.
+- **The model curve**: If the curve hits 0.70 at the 0.20 mark on the X-axis, it means targeting the top 20% of users (ranked by model probability) captures 70% of all actual positives.
+
+A **Lift curve** is derived directly from the cumulative gains curve. It shows the multiplier of improvement over random guessing at each decile. If you target the top 10% of users and find 3 times as many positives as a random 10% sample would yield, your lift at the 10th percentile is 3.0. 
+
+These curves are indispensable for translating model performance into business strategy: they let stakeholders answer questions like "How deep into the list should we go to hit our ROI target?"
 
 ---
 
@@ -570,6 +627,58 @@ How to read this table:
 </p>
 
 In the example: "No text features" is significantly worse (p = 0.003, large effect), confirming text features are important. "LR + embeddings" is significantly better (p = 0.038, small-to-medium effect) — worth investigating further. "MLP" is not significantly different from the control (p = 0.142).
+
+---
+
+## The business evaluation
+
+The model with the highest AUC or lowest RMSE on the cross-validation leaderboard is rarely the best model to deploy. In production, predictive accuracy is just one variable in a larger business equation. Before deploying, evaluate the model against these operational constraints.
+
+### Expected Value (EV)
+
+A model is only worth deploying if its Return on Investment (ROI) is positive. To calculate this, translate the confusion matrix into dollars using an Expected Value framework.
+
+`EV = p(TP) × Value(TP) + p(TN) × Value(TN) + p(FP) × Cost(FP) + p(FN) × Cost(FN)`
+
+If the expected value of using the model is lower than the expected value of your current baseline (which might be a simple rules engine, or a manual review process), the model is a failure, regardless of its statistical significance.
+
+**Hard vs. Soft ROI.** Distinguish between **hard ROI** (revenue increase, cost reduction, fraud prevented) and **soft ROI** (faster decisions, reduced manual work, better customer experience). Report both: executives care about dollars, teams care about whether the model makes their work easier. Example: a fraud model that saves $50K/year (hard) but also cuts analyst investigation time by 30% (soft) has stronger total value than the $50K alone suggests. 
+
+### The complexity tax
+
+A massive gradient boosting ensemble might beat a simple logistic regression by 0.02 AUC. However, the complex model carries a "complexity tax":
+- **Compute cost**: It costs more to train and host.
+- **Latency**: It takes longer to generate predictions, which can degrade user experience (e.g., in real-time bidding or search).
+- **Maintenance**: It is harder to monitor, debug, and update.
+
+Always establish a simple baseline. If a complex model yields only a marginal improvement over a simple one, deploy the simple one. You should only pay the complexity tax if the expected business value of the accuracy bump far exceeds the operational costs.
+
+### Interpretability constraints
+
+In highly regulated domains (finance, healthcare, insurance), deploying a "black-box" model is often illegal or ethically unacceptable. If a customer is denied a loan or a medical claim, the business must explain exactly why.
+
+In these environments, an interpretable model (like logistic regression, decision trees, or generalized additive models) with an AUC of 0.82 will always win against a deep neural network with an AUC of 0.87. Evaluate whether your use case requires intrinsic explainability before exploring complex architectures.
+
+### Offline vs. online performance
+
+Good offline metrics (AUC, MAE, NDCG) are just a ticket to run an A/B test. The ultimate evaluation is whether the model actually moves the core business KPIs (revenue, retention, conversion rate) in a live environment.
+
+Offline metrics often diverge from online reality due to:
+- **Feedback loops**: The model's predictions change user behavior in ways historical data cannot capture.
+- **Latency**: The new model is more accurate but slower, causing users to abandon the page.
+- **Cannibalization**: The model increases clicks on one feature but decreases them on a more profitable one.
+
+Never consider an evaluation complete until the model has proven its value in a randomized controlled trial (A/B test) against the production baseline.
+
+### Time-to-value
+
+Do not assume day-one performance persists indefinitely. Factor in:
+
+- **Ramp-up period**: users need time to trust the model. A recommendation system might show weak engagement for weeks until users learn the interface. Budget 1-3 months for adoption.
+- **Maintenance costs**: retraining costs compute and engineer time. Monitoring requires infrastructure. A model with 10% higher accuracy but 3× the maintenance burden may have worse long-term ROI.
+- **Drift**: performance degrades without retraining. If your fraud model requires weekly retraining to stay effective, include that recurring cost.
+
+Project ROI over 12-24 months, not launch day. A simpler model with stable performance often beats a complex one that requires constant tuning.
 
 ---
 
