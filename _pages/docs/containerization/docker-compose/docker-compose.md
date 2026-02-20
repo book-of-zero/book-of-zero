@@ -37,9 +37,9 @@ This page assumes Docker and Docker Compose are installed. If you are new to Doc
 ### Setup steps
 
 1. Copy the examples into conventional names at the project root:
-   - `pages/docs/containerization/docker/Dockerfile.example` → `Dockerfile`
-   - `pages/docs/containerization/docker-compose/docker-compose.yaml.example` → `docker-compose.yaml`
-   - `pages/docs/containerization/docker-compose/docker-compose.hardened.yaml.example` → `docker-compose.hardened.yaml` if you want a production-like posture
+   - `_pages/docs/containerization/docker/Dockerfile.example` → `Dockerfile`
+   - `_pages/docs/containerization/docker-compose/docker-compose.yaml.example` → `docker-compose.yaml`
+   - `_pages/docs/containerization/docker-compose/docker-compose.hardened.yaml.example` → `docker-compose.hardened.yaml` if you want a production-like posture
 2. Create the env files for compose:
    - **`.env`**: used by compose for `${...}` variable substitution and passed into the container at runtime via `env_file` (application configuration).
 3. Start the service:
@@ -72,7 +72,7 @@ Use this when you want to surface hidden write assumptions early while keeping t
 docker compose -f docker-compose.yaml -f docker-compose.hardened.yaml up --build
 ```
 
-The hardened override adds `read_only: true`, drops all Linux capabilities, prevents privilege escalation, and creates explicit writable `tmpfs` mounts for `/tmp` and `/app/logs`. This can surface hidden assumptions in Python libraries that try to write to `~/.cache` or `~/.config`. Route those caches to writable locations (commonly under `/tmp`) via environment variables such as `HOME`, `XDG_CACHE_HOME`, and `XDG_CONFIG_HOME`.
+The hardened override adds `read_only: true`, drops all Linux capabilities, prevents privilege escalation, and creates explicit writable `tmpfs` mounts for `/tmp`. This can surface hidden assumptions in Python libraries that try to write to `~/.cache` or `~/.config`. Route those caches to writable locations (commonly under `/tmp`) via environment variables such as `HOME`, `XDG_CACHE_HOME`, and `XDG_CONFIG_HOME`.
 
 ### Day-to-day loop
 
@@ -117,9 +117,9 @@ Use these templates when you want a baseline quickly, then customize for your ap
 
 ## Compose configuration reference
 
-An example compose file is provided at `pages/docs/containerization/docker-compose/docker-compose.yaml.example` as a baseline starting point for running the container locally.
+An example compose file is provided at `_pages/docs/containerization/docker-compose/docker-compose.yaml.example` as a baseline starting point for running the container locally.
 
-An optional hardened override is provided at `pages/docs/containerization/docker-compose/docker-compose.hardened.yaml.example`. It is designed to layer on top of the baseline file so you can switch between a low-friction dev posture and a production-like posture with a single additional `-f` flag.
+An optional hardened override is provided at `_pages/docs/containerization/docker-compose/docker-compose.hardened.yaml.example`. It is designed to layer on top of the baseline file so you can switch between a low-friction dev posture and a production-like posture with a single additional `-f` flag.
 
 ### When to use each compose field
 
@@ -143,12 +143,12 @@ An optional hardened override is provided at `pages/docs/containerization/docker
   - `read_only: true` makes the container filesystem read-only. This is a practical way to detect unexpected writes early and to reduce the amount of mutable state a container can accumulate at runtime.
   - `cap_drop: [ALL]` removes Linux capabilities from the container to enforce least privilege. Add back only what you can justify for the workload.
   - `security_opt: ["no-new-privileges:true"]` prevents privilege escalation through setuid/setcap binaries, even if they exist in the image.
-  - `tmpfs: [...]` creates explicit writable mounts in memory (for example `/tmp` and `/app/logs`). Combined with `read_only: true`, this makes writable paths intentional and easy to audit.
+  - `tmpfs: [...]` creates explicit writable mounts in memory (for example `/tmp`). Combined with `read_only: true`, this makes writable paths intentional and easy to audit.
   - In practice, keep these settings in a separate override file (for example `docker-compose.hardened.yaml`) so the baseline setup stays easy to run.
   - A hardened setup can surface hidden assumptions in Python libraries that try to write to `~/.cache` or `~/.config`. If you use `read_only: true` and a non-root user, route caches/config to writable locations (commonly under `/tmp`) via environment variables such as `HOME`, `XDG_CACHE_HOME`, and `XDG_CONFIG_HOME`.
 - **`healthcheck`**: use when you want an explicit readiness signal for local orchestration and troubleshooting. Prefer checks that do not require extra OS packages (the example uses Python to probe the listening port).
 
-If you do not want to copy files, you can also adapt the compose file to reference the example Dockerfile path directly (set `dockerfile: pages/docs/containerization/docker/Dockerfile.example`).
+If you do not want to copy files, you can also adapt the compose file to reference the example Dockerfile path directly (set `dockerfile: _pages/docs/containerization/docker/Dockerfile.example`).
 
 ---
 

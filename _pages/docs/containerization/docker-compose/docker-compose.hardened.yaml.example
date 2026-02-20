@@ -11,4 +11,3 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,size=256m
-      - /app/logs:rw,nosuid,nodev,noexec,size=64m
