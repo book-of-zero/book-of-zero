@@ -14,6 +14,8 @@ FROM ${UV_IMAGE} AS uv
 FROM python:${PYTHON_VERSION}-slim AS builder
 COPY --from=uv /uv /uvx /bin/
 
+ARG PACKAGE_NAME
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
@@ -38,6 +40,7 @@ ARG PORT
 ARG BUILD_DATE
 ARG VCS_REF
 ARG VCS_URL
+ARG PACKAGE_NAME
 
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.revision="${VCS_REF}" \
@@ -61,12 +64,16 @@ COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 COPY --from=builder --chown=appuser:appuser /app/${PACKAGE_NAME} /app/${PACKAGE_NAME}
 COPY --from=builder --chown=appuser:appuser /app/main.py /app/main.py
 
-RUN mkdir -p /app/logs && chown -R appuser:appuser /app/logs
-
 USER appuser
 
 ENV ENVIRONMENT=dev
 ENV LOG_LEVEL=INFO
+
+# Optional: Add a healthcheck if your application is a web service
+# (Note: curl is not installed in python:slim by default, so you may need to apt-get install it, 
+# or use a python-based healthcheck)
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+#     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 EXPOSE ${PORT}
 

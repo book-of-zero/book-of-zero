@@ -22,6 +22,8 @@ Docker is a practical way to package code and dependencies into a single runnabl
   - [Builder stage: install dependencies into a local venv](#builder-stage-install-dependencies-into-a-local-venv)
   - [Runtime stage: minimal image, non-root user](#runtime-stage-minimal-image-non-root-user)
 - [Best practices](#best-practices)
+  - [Common patterns](#common-patterns)
+  - [Security and supply chain](#security-and-supply-chain)
 - [Logs and debugging](#logs-and-debugging)
 
 ---
@@ -37,9 +39,9 @@ Docker is a practical way to package code and dependencies into a single runnabl
 
 ## Quick start: build and run
 
-The reference Dockerfile at `pages/docs/containerization/docker/Dockerfile.example` expects a typical Python project layout at the project root: `pyproject.toml`, a dependency lock file (for `uv`, this is `uv.lock`), a Python package directory (controlled via the `PACKAGE_NAME` build argument), and `main.py` as the entrypoint. If your project differs, adapt `PACKAGE_NAME` and/or the container `CMD` (see [Override the command](#override-the-command)).
+The reference Dockerfile at `_pages/docs/containerization/docker/Dockerfile.example` expects a typical Python project layout at the project root: `pyproject.toml`, a dependency lock file (for `uv`, this is `uv.lock`), a Python package directory (controlled via the `PACKAGE_NAME` build argument), and `main.py` as the entrypoint. If your project differs, adapt `PACKAGE_NAME` and/or the container `CMD` (see [Override the command](#override-the-command)).
 
-The Dockerfile uses BuildKit mounts (`RUN --mount=...`). If BuildKit is not already enabled, prefix builds with `DOCKER_BUILDKIT=1`. Add a `.dockerignore` at the project root to keep builds fast and avoid leaking local artifacts into images (an example is provided at `pages/docs/containerization/docker/.dockerignore.example`).
+The Dockerfile uses BuildKit mounts (`RUN --mount=...`). If BuildKit is not already enabled, prefix builds with `DOCKER_BUILDKIT=1`. Add a `.dockerignore` at the project root to keep builds fast and avoid leaking local artifacts into images (an example is provided at `_pages/docs/containerization/docker/.dockerignore.example`).
 
 ### Workflow
 
@@ -78,7 +80,7 @@ Run the command from the project root so the build context includes `pyproject.t
 
 ```bash
 docker build \
-  -f pages/docs/containerization/docker/Dockerfile.example \
+  -f _pages/docs/containerization/docker/Dockerfile.example \
   -t <image>:<tag> \
   --build-arg PACKAGE_NAME=<package_dir> \
   .
@@ -119,7 +121,6 @@ docker run --rm \
   --cap-drop=ALL \
   --security-opt=no-new-privileges \
   --tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m \
-  --tmpfs /app/logs:rw,nosuid,nodev,noexec,size=64m \
   -p 8080:8080 \
   -e HOME=/tmp \
   -e XDG_CACHE_HOME=/tmp/.cache \
@@ -166,11 +167,19 @@ Use these templates when you want a baseline quickly, then customize for your ap
 
 ## The reference Dockerfile
 
-The reference implementation is `pages/docs/containerization/docker/Dockerfile.example`. It is designed around three goals:
+The reference implementation is `_pages/docs/containerization/docker/Dockerfile.example`. It is designed around three goals:
 
 - **Reproducibility**: install dependencies from a lock file.
 - **Fast rebuilds**: cache dependency downloads.
 - **Security**: run as a non-root user in the runtime image.
+
+### BuildKit syntax directive
+
+```dockerfile
+# syntax=docker/dockerfile:1
+```
+
+The first line of the Dockerfile is a parser directive. It instructs Docker to use the latest BuildKit frontend, ensuring that modern features like `--mount=type=cache` are available and behave consistently, regardless of the default Docker engine version on the host.
 
 ### Build arguments
 
@@ -202,7 +211,7 @@ In enterprise CI, those traceability arguments are typically populated from the 
 
 ```bash
 docker build \
-  -f pages/docs/containerization/docker/Dockerfile.example \
+  -f _pages/docs/containerization/docker/Dockerfile.example \
   -t <image>:<tag> \
   --build-arg PACKAGE_NAME=<package_dir> \
   --build-arg UV_IMAGE="ghcr.io/astral-sh/uv:<version-or-digest>" \
@@ -218,6 +227,8 @@ docker build \
 FROM ${UV_IMAGE} AS uv
 FROM python:${PYTHON_VERSION}-slim AS builder
 COPY --from=uv /uv /uvx /bin/
+
+ARG PACKAGE_NAME
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -245,7 +256,7 @@ If your dependencies require access to private resources, keep credentials out o
 
   ```bash
   docker build \
-    -f pages/docs/containerization/docker/Dockerfile.example \
+    -f _pages/docs/containerization/docker/Dockerfile.example \
     -t <image>:<tag> \
     --build-arg PACKAGE_NAME=<package_dir> \
     --secret id=pip_conf,src=./pip.conf \
@@ -264,7 +275,7 @@ If your dependencies require access to private resources, keep credentials out o
 
   ```bash
   docker build \
-    -f pages/docs/containerization/docker/Dockerfile.example \
+    -f _pages/docs/containerization/docker/Dockerfile.example \
     -t <image>:<tag> \
     --build-arg PACKAGE_NAME=<package_dir> \
     --ssh default \
@@ -294,12 +305,26 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable
 ```
 
-This step makes the "what changes invalidate which layers" trade-off explicit. By copying only the dependency metadata and the selected package directory, you preserve cache stability and make the image's runtime surface area reviewable.
+This step makes the "what changes invalidate which layers" trade-off explicit. By copying only the dependency metadata and the selected package directory, you preserve cache stability and make the image's runtime surface area reviewable. Because `uv` recognizes that third-party dependencies are already installed in `.venv`, this final sync is extremely fast and only installs the application code.
 
 ### Runtime stage: minimal image, non-root user
 
 ```dockerfile
 FROM python:${PYTHON_VERSION}-slim
+
+ARG UID
+ARG PORT
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VCS_URL
+ARG PACKAGE_NAME
+
+LABEL org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="${VCS_URL}"
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 RUN adduser \
     --disabled-password \
@@ -316,13 +341,14 @@ COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 COPY --from=builder --chown=appuser:appuser /app/${PACKAGE_NAME} /app/${PACKAGE_NAME}
 COPY --from=builder --chown=appuser:appuser /app/main.py /app/main.py
 
-RUN mkdir -p /app/logs && chown -R appuser:appuser /app/logs
-
 USER appuser
 ```
 
 The runtime stage starts from a fresh base image so build-only artifacts do not leak into production.
 
+- **`ARG` re-declaration**: Build arguments declared before the first `FROM` are outside the build stage scope. They must be re-declared here to be used in `LABEL`s or `ENV`s.
+- **`LABEL`s**: OCI annotations attach traceability metadata (like the commit SHA and build date) directly to the final image.
+- **Python environment**: The `PYTHONDONTWRITEBYTECODE` and `PYTHONUNBUFFERED` variables are repeated here because environment variables from the builder stage do not carry over to the new base image.
 - A non-privileged user is created and later used to run the application.
 - This is a baseline security best practice: if something goes wrong inside the app, it should not have root privileges.
 
@@ -335,6 +361,12 @@ Finally, environment defaults and the runtime command are defined:
 ```dockerfile
 ENV ENVIRONMENT=dev
 ENV LOG_LEVEL=INFO
+
+# Optional: Add a healthcheck if your application is a web service
+# (Note: curl is not installed in python:slim by default, so you may need to apt-get install it, 
+# or use a python-based healthcheck)
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+#     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 EXPOSE ${PORT}
 CMD ["/app/.venv/bin/python", "main.py"]
@@ -382,6 +414,14 @@ If you need GPUs, keep the container contract simple:
 
 - Make GPU usage **optional** (the same image should run CPU-only).
 - Prefer runtime configuration (for example `--gpus all`) over building separate "gpu" images unless you truly need different system dependencies.
+
+### Security and supply chain
+
+Modern container deployments treat security as part of the build pipeline. At a minimum, a CI/CD workflow should automate these three checks before an image is pushed to production:
+
+- **Vulnerability scanning**: Check the image layers and installed packages for known Common Vulnerabilities and Exposures (CVEs). Tools like [Trivy](https://trivy.dev/) or [Grype](https://github.com/anchore/grype) can fail the build if critical or fixable vulnerabilities are found.
+- **SBOM (Software Bill of Materials) generation**: Create a machine-readable inventory of all software components, libraries, and transitive dependencies inside your image. This is critical for compliance and incident response (for example, quickly finding out if you are affected by a new zero-day vulnerability). [Syft](https://github.com/anchore/syft) and Trivy are industry standards for this.
+- **Image signing**: Cryptographically sign the image digest so your deployment environment (like Kubernetes) can verify the image has not been tampered with since it was built in CI. [Cosign](https://github.com/sigstore/cosign) (part of the Sigstore project) is the leading tool for keyless container signing.
 
 ---
 
