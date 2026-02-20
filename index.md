@@ -5,6 +5,11 @@ permalink: /
 nav_order: 0
 ---
 
+> *"The best way to predict the future is to invent it."*  
+> — **Alan Kay**
+
+<br>
+
 Practical notes for building foundations in AI, Data, and engineering.
 
 ### Versioning
