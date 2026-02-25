@@ -250,7 +250,7 @@ Mean Absolute Percentage Error translates errors into percentages, making it muc
 
 **For targets with heavy right tails → RMSLE.**
 
-Root Mean Squared Logarithmic Error is used when the target spans several orders of magnitude (prices, income, counts). An error of \$100 matters a lot if the true price is \$50, but is irrelevant if the true price is \$500,000. RMSLE penalizes relative differences rather than absolute ones, and it penalizes underestimates more heavily than overestimates. 
+Root Mean Squared Logarithmic Error is used when the target spans several orders of magnitude (prices, income, counts). An error of &#36;100 matters a lot if the true price is &#36;50, but is irrelevant if the true price is &#36;500,000. RMSLE penalizes relative differences rather than absolute ones, and it penalizes underestimates more heavily than overestimates. 
 
 `RMSLE = √(mean((log(y + 1) − log(ŷ + 1))²))`
 
@@ -645,7 +645,7 @@ A model is only worth deploying if its Return on Investment (ROI) is positive. T
 
 If the expected value of using the model is lower than the expected value of your current baseline (which might be a simple rules engine, or a manual review process), the model is a failure, regardless of its statistical significance.
 
-**Hard vs. Soft ROI.** Distinguish between **hard ROI** (revenue increase, cost reduction, fraud prevented) and **soft ROI** (faster decisions, reduced manual work, better customer experience). Report both: executives care about dollars, teams care about whether the model makes their work easier. Example: a fraud model that saves \$50K per year (hard) but also cuts analyst investigation time by 30% (soft) has stronger total value than the \$50K alone suggests. 
+**Hard vs. Soft ROI.** Distinguish between **hard ROI** (revenue increase, cost reduction, fraud prevented) and **soft ROI** (faster decisions, reduced manual work, better customer experience). Report both: executives care about dollars, teams care about whether the model makes their work easier. Example: a fraud model that saves &#36;50K per year (hard) but also cuts analyst investigation time by 30% (soft) has stronger total value than the &#36;50K alone suggests. 
 
 ### The complexity tax
 
