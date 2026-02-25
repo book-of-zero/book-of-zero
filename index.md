@@ -13,19 +13,20 @@ Practical notes for building foundations in AI, Data, and engineering.
 
 ### Versioning
 
-- [Git workflow]({% link _pages/docs/git/git.md %})
+- [Git workflow]({% link _pages/docs/git/page.md %})
 
 ### Containerization
 
-- [Docker]({% link _pages/docs/containerization/docker/docker.md %})
-- [Docker Compose]({% link _pages/docs/containerization/docker-compose/docker-compose.md %})
+- [Docker]({% link _pages/docs/containerization/docker/page.md %})
+- [Docker Compose]({% link _pages/docs/containerization/docker-compose/page.md %})
 
 ### Machine Learning
 
-- [Experiments]({% link _pages/docs/machine-learning/experiments/experiments.md %})
-- [Evaluation]({% link _pages/docs/machine-learning/evaluation/evaluation.md %})
+- [Experiments]({% link _pages/docs/machine-learning/experiments/page.md %})
+- [Evaluation]({% link _pages/docs/machine-learning/evaluation/page.md %})
 
 ### Generative AI
 
-- [System prompt]({% link _pages/docs/genai/system-prompt/system-prompt.md %})
+- [System prompt]({% link _pages/docs/genai/system-prompt/page.md %})
+
 
