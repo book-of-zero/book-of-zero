@@ -5,7 +5,7 @@ permalink: /
 nav_order: 0
 ---
 
-> *"True mastery demands the courage to start at zero."* — Book of Zero
+> *"True mastery demands the courage to start at zero."*
 
 <br>
 
@@ -29,4 +29,8 @@ Practical notes for building foundations in AI, Data, and engineering.
 
 - [System prompt]({% link _pages/docs/genai/system-prompt/page.md %})
 
+<!-- #### RAG
 
+- [Indexing]({% link _pages/docs/genai/rag/indexing/page.md %})
+- [Retrieval]({% link _pages/docs/genai/rag/retrieval/page.md %})
+- [Evaluation]({% link _pages/docs/genai/rag/evaluation/page.md %}) -->
