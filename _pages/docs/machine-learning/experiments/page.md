@@ -100,7 +100,7 @@ For classical ML with cross-validation, each seed × fold combination produces a
 | Publishable comparison | 10 | 50 |
 | High-stakes or noisy | 20+ | 100+ |
 
-If the standard deviation across seeds is large relative to the difference between models, the comparison is inconclusive — add more seeds or reconsider the experimental design. Use power analysis (see [Evaluation: statistical significance]({{ site.baseurl }}/docs/machine-learning/evaluation/evaluation/#statistical-significance)) to determine exactly how many you need.
+If the standard deviation across seeds is large relative to the difference between models, the comparison is inconclusive — add more seeds or reconsider the experimental design. Use power analysis (see [Evaluation: statistical significance]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#statistical-significance)) to determine exactly how many you need.
 
 ### Environment pinning
 
@@ -110,7 +110,7 @@ Pin everything that can change between machines or over time:
 - **Dependencies**: use `uv.lock`. The Dockerfile enforces this with `uv sync --locked` — if the lockfile is missing or stale, the build fails.
 - **scikit-learn version**: a minor version upgrade can change default hyperparameters, convergence criteria, or internal random number consumption. A model trained on 1.4 may not reproduce identically on 1.5 even with the same seed. The lockfile handles this, but document the version in your experiment logs.
 
-The Dockerfile from the [Docker guide]({{ site.baseurl }}/docs/containerization/docker/docker/) already enforces Python version and dependency pinning via `uv sync --locked`.
+The Dockerfile from the [Docker guide]({{ site.baseurl }}/docs/containerization/docker/page/) already enforces Python version and dependency pinning via `uv sync --locked`.
 
 ### Determinism boundaries
 
@@ -635,7 +635,7 @@ Ablation answers: "does this component actually help?"
 1. **Start from the full system** — the configuration with all components enabled. This is your control.
 2. **Remove one component at a time** and re-run. Each ablation variant changes exactly one thing so the effect is attributable. This is leave-one-component-out (LOCO) ablation — the standard approach. Its limitation: it cannot detect interaction effects. If two components are individually weak but jointly critical (synergy), or if one component compensates when another is removed (masquerade), LOCO will miss it. Use a factorial design when you suspect interactions.
 3. **Run each variant across multiple seeds** (same seeds for all variants).
-4. **Compare to the control** using the same metric and statistical test (see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/evaluation/#comparing-results)).
+4. **Compare to the control** using the same metric and statistical test (see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#comparing-results)).
 
 Run all variants with a simple loop:
 
@@ -658,7 +658,7 @@ Report ablation results as a table: each row is a variant, columns show the metr
   <img src="{{ "/assets/images/plots/ablation.svg" | relative_url }}" alt="Ablation study bar chart showing AUC delta vs control with significance markers">
 </p>
 
-For statistical tests and how to read comparison tables, see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/evaluation/#comparing-results).
+For statistical tests and how to read comparison tables, see [Evaluation: comparing results]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#comparing-results).
 
 ---
 

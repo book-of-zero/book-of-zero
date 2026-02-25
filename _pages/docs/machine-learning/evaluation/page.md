@@ -93,13 +93,13 @@ Before training any model, compute the baseline: what score does a naive predict
 
 Establish the baseline first. It prevents you from celebrating a "92% accuracy" on a dataset that is 91% one class — this is the **accuracy paradox.** A model that predicts the majority class for every input achieves high accuracy on imbalanced data while being completely useless. This is why accuracy alone is insufficient for imbalanced problems. Always pair it with metrics that reflect performance on the minority class: recall, precision, F1, MCC, or AUC-PR.
 
-For a complete baseline workflow including code examples and tracking with MLflow, see [Experiments: baselines]({{ site.baseurl }}/docs/machine-learning/experiments/experiments/#baselines).
+For a complete baseline workflow including code examples and tracking with MLflow, see [Experiments: baselines]({{ site.baseurl }}/docs/machine-learning/experiments/page/#baselines).
 
 ### Model selection
 
 You are comparing models or hyperparameter sets. Use threshold-independent metrics so the comparison is fair — you are judging the model's ranking ability, not a particular cutoff.
 
-To compare reliably, evaluate with cross-validation — typically 5-fold. Sklearn uses stratified k-fold by default for classifiers, preserving class proportions in each fold. A single train/test split can be noisy; cross-validation gives you a mean and standard deviation for each metric. For robust model comparison, run multiple seeds — a single seed can give misleading results (see [Experiments: seeds and reproducibility]({{ site.baseurl }}/docs/machine-learning/experiments/experiments/#seeds) for the full protocol).
+To compare reliably, evaluate with cross-validation — typically 5-fold. Sklearn uses stratified k-fold by default for classifiers, preserving class proportions in each fold. A single train/test split can be noisy; cross-validation gives you a mean and standard deviation for each metric. For robust model comparison, run multiple seeds — a single seed can give misleading results (see [Experiments: seeds and reproducibility]({{ site.baseurl }}/docs/machine-learning/experiments/page/#seeds) for the full protocol).
 
 **Beware of naive splitting.** If multiple rows belong to the same entity (e.g., five scans of the same patient), standard cross-validation will put the patient in both the train and test sets, leaking data. Use `GroupKFold` to ensure all records for an entity stay together. For time-series data, random splitting leaks the future to predict the past; use `TimeSeriesSplit` or an out-of-time test set.
 
@@ -551,7 +551,7 @@ A model with a higher mean score is not necessarily better — the difference mi
 
 **Paired tests compare models on the same data.** Each seed (or fold) produces a paired observation: model A's score and model B's score on the same split. Paired tests are more powerful than unpaired tests because they control for variance across splits.
 
-**How many seeds?** Hypothesis tests need enough paired observations to have statistical power. With fewer than 6 paired observations, the Wilcoxon signed-rank test cannot reach p < 0.05 — and a paired t-test with 4 degrees of freedom is barely better. You need at least 10 paired observations for minimal statistical power — this could come from 10 seeds (single train/test split per seed), 10 CV folds (single seed), or a combination. For robust, publishable comparisons, use 10 seeds × 5-fold CV = 50 paired observations (see [Experiments: reproducibility and seed protocols]({{ site.baseurl }}/docs/machine-learning/experiments/experiments/#seeds)). With fewer than 10 paired observations, report bootstrap confidence intervals instead of p-values.
+**How many seeds?** Hypothesis tests need enough paired observations to have statistical power. With fewer than 6 paired observations, the Wilcoxon signed-rank test cannot reach p < 0.05 — and a paired t-test with 4 degrees of freedom is barely better. You need at least 10 paired observations for minimal statistical power — this could come from 10 seeds (single train/test split per seed), 10 CV folds (single seed), or a combination. For robust, publishable comparisons, use 10 seeds × 5-fold CV = 50 paired observations (see [Experiments: reproducibility and seed protocols]({{ site.baseurl }}/docs/machine-learning/experiments/page/#seeds)). With fewer than 10 paired observations, report bootstrap confidence intervals instead of p-values.
 
 **Paired t-test**: assumes the paired differences are approximately normally distributed. Use when you have 10+ seeds or folds and the differences look roughly symmetric.
 

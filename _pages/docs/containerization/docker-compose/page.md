@@ -4,7 +4,7 @@ title: "Docker Compose: orchestrate local development"
 nav_order: 3
 ---
 
-Docker Compose gives you a single command to build, start, and wire together the services that make up your local development stack. This page covers the Compose workflow and configuration. For building images and running standalone containers, see [Docker: containerize a Python project]({{ site.baseurl }}/docs/containerization/docker/docker/).
+Docker Compose gives you a single command to build, start, and wire together the services that make up your local development stack. This page covers the Compose workflow and configuration. For building images and running standalone containers, see [Docker: containerize a Python project]({{ site.baseurl }}/docs/containerization/docker/page/).
 
 ---
 
@@ -32,7 +32,7 @@ Docker Compose gives you a single command to build, start, and wire together the
 
 ## Quick start: local dev with compose
 
-This page assumes Docker and Docker Compose are installed. If you are new to Docker images, start with the [Docker page]({{ site.baseurl }}/docs/containerization/docker/docker/) for image building fundamentals and the reference Dockerfile.
+This page assumes Docker and Docker Compose are installed. If you are new to Docker images, start with the [Docker page]({{ site.baseurl }}/docs/containerization/docker/page/) for image building fundamentals and the reference Dockerfile.
 
 ### Setup steps
 
@@ -170,7 +170,7 @@ Stream logs from a single service:
 docker compose logs -f <service-name>
 ```
 
-For single-container log streaming, see the [Docker page: Logs and debugging]({{ site.baseurl }}/docs/containerization/docker/docker/#logs-and-debugging).
+For single-container log streaming, see the [Docker page: Logs and debugging]({{ site.baseurl }}/docs/containerization/docker/page/#logs-and-debugging).
 
 ### Debug a running service
 
@@ -192,4 +192,4 @@ docker compose run --rm <service-name> <command>
 - **Stop a compose stack**: `docker compose down` (add `-v` if you intentionally want to remove named volumes)
 - **Rebuild and restart**: `docker compose up --build --force-recreate`
 
-For standalone Docker commands (`docker ps`, `docker images`, `docker stats`, etc.), see the [Docker page: Logs and debugging]({{ site.baseurl }}/docs/containerization/docker/docker/#logs-and-debugging).
+For standalone Docker commands (`docker ps`, `docker images`, `docker stats`, etc.), see the [Docker page: Logs and debugging]({{ site.baseurl }}/docs/containerization/docker/page/#logs-and-debugging).

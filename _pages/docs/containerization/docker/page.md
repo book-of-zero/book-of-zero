@@ -4,7 +4,7 @@ title: "Docker: containerize a Python project"
 nav_order: 2
 ---
 
-Docker is a practical way to package code and dependencies into a single runnable unit. This page focuses on building images and running containers. For orchestrating services locally with Docker Compose, see [Docker Compose: orchestrate local development]({{ site.baseurl }}/docs/containerization/docker-compose/docker-compose/).
+Docker is a practical way to package code and dependencies into a single runnable unit. This page focuses on building images and running containers. For orchestrating services locally with Docker Compose, see [Docker Compose: orchestrate local development]({{ site.baseurl }}/docs/containerization/docker-compose/page/).
 
 ---
 
@@ -49,7 +49,7 @@ The reference Dockerfile uses a lockfile-driven install, a multi-stage build, a 
 
 Three contexts drive the workflow:
 
-- **Local dev**: use Compose for fast iteration with consistent flags (see [Docker Compose: orchestrate local development]({{ site.baseurl }}/docs/containerization/docker-compose/docker-compose/)).
+- **Local dev**: use Compose for fast iteration with consistent flags (see [Docker Compose: orchestrate local development]({{ site.baseurl }}/docs/containerization/docker-compose/page/)).
 - **CI/CD**: build a deterministic artifact, attach metadata, scan, and publish.
 - **Runtime**: run with a production-like posture (least privilege, explicit writable paths).
 
