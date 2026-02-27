@@ -571,6 +571,7 @@ semantic_chunks = semantic_splitter.split_text(document_text)
 
 Use an LLM to decide how to chunk. Experimental and expensive, but handles edge cases that rule-based systems miss.
 
+{% raw %}
 ```python
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
@@ -595,6 +596,7 @@ Output JSON: [{{"chunk_text": "...", "summary": "..."}}]
 response = llm.invoke(prompt.format(document=document_text))
 agentic_chunks = parse_json(response.content)  # Extract chunks from LLM response
 ```
+{% endraw %}
 
 **Why this might work**: The LLM understands nuance. It can merge a short paragraph with the next section if they're topically related, or split a long paragraph if it contains two distinct ideas.
 
