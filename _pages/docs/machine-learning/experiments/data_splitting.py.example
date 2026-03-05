@@ -1,0 +1,147 @@
+"""Data splitting patterns for ML experiments.
+
+Requires config.py (from config.py.example) on the import path.
+"""
+
+import argparse
+from typing import Any
+
+import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin, clone
+from sklearn.metrics import get_scorer
+from sklearn.model_selection import (
+    GroupKFold,
+    GroupShuffleSplit,
+    StratifiedKFold,
+    cross_validate,
+    train_test_split,
+)
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
+
+from config import ExperimentConfig
+
+
+def stratified_split(
+    X: pd.DataFrame, y: pd.Series, cfg: ExperimentConfig
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Hold out a stratified test set before any training or tuning."""
+    return train_test_split(
+        X, y,
+        test_size=cfg.data.test_size,
+        stratify=y,
+        random_state=cfg.seeds[0],
+    )
+
+
+def stratified_cv(
+    pipe: Pipeline, X_train: pd.DataFrame, y_train: pd.Series,
+    cfg: ExperimentConfig, seed: int,
+) -> dict[str, Any]:
+    """Run cross-validation with preprocessing inside the pipeline to prevent leakage."""
+    cv = StratifiedKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=seed)
+    return cross_validate(pipe, X_train, y_train, cv=cv, scoring=cfg.scoring)
+
+
+def group_split(
+    X: pd.DataFrame, y: pd.Series, groups: pd.Series, cfg: ExperimentConfig
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Split respecting entity groups — no entity appears in both train and test."""
+    gss = GroupShuffleSplit(
+        n_splits=1, test_size=cfg.data.test_size, random_state=cfg.seeds[0]
+    )
+    train_idx, test_idx = next(gss.split(X, y, groups=groups))
+
+    return (
+        X.iloc[train_idx], X.iloc[test_idx],
+        y.iloc[train_idx], y.iloc[test_idx],
+    )
+
+
+def group_cv(
+    pipe: Pipeline,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    groups_train: pd.Series,
+    cfg: ExperimentConfig,
+) -> dict[str, Any]:
+    """Cross-validation respecting groups within the training set."""
+    cv = GroupKFold(n_splits=cfg.cv_splits)
+    return cross_validate(
+        pipe, X_train, y_train, cv=cv, groups=groups_train, scoring=cfg.scoring
+    )
+
+
+def early_stopping_cv(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    estimator: BaseEstimator,
+    cfg: ExperimentConfig,
+    seed: int,
+    preprocessor: TransformerMixin | None = None,
+) -> list[float]:
+    """Manual CV loop with early stopping — passes eval_set directly to the estimator.
+
+    Scoring uses cfg.scoring via sklearn's get_scorer, so the metric must be
+    compatible with predict_proba (e.g. roc_auc, average_precision, neg_log_loss).
+    """
+    scorer = get_scorer(cfg.scoring)
+    cv = StratifiedKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=seed)
+    fold_scores: list[float] = []
+
+    for fold, (train_idx, val_idx) in enumerate(cv.split(X_train, y_train)):
+        X_fold_train = X_train.iloc[train_idx]
+        X_fold_val = X_train.iloc[val_idx]
+        y_fold_train = y_train.iloc[train_idx]
+        y_fold_val = y_train.iloc[val_idx]
+
+        if preprocessor is not None:
+            pre = clone(preprocessor)
+            X_fold_train = pre.fit_transform(X_fold_train)
+            X_fold_val = pre.transform(X_fold_val)
+
+        model = clone(estimator)
+        model.fit(
+            X_fold_train, y_fold_train,
+            eval_set=[(X_fold_val, y_fold_val)],
+            verbose=False,
+        )
+
+        score = scorer(model, X_fold_val, y_fold_val)
+        fold_scores.append(score)
+        print(f"Fold {fold}: {score:.4f} (stopped at iteration {model.best_iteration})")
+
+    return fold_scores
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True, help="Path to YAML config")
+    args = parser.parse_args()
+
+    cfg = ExperimentConfig.from_yaml(args.config)
+    df = pd.read_parquet(cfg.data.path)
+    X = df.drop(columns=[cfg.data.target] + cfg.data.drop_columns)
+    y = df[cfg.data.target]
+
+    X_train, X_test, y_train, y_test = stratified_split(X, y, cfg)
+    print(f"Train: {len(X_train)}, Test: {len(X_test)}")
+
+    for seed in cfg.seeds:
+        print(f"\n--- Seed {seed} ---")
+
+        pipe = Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", XGBClassifier(**cfg.model.params, random_state=seed)),
+        ])
+        results = stratified_cv(pipe, X_train, y_train, cfg, seed)
+        print(f"Stratified CV: {results['test_score'].mean():.4f} ± {results['test_score'].std():.4f}")
+
+        model = XGBClassifier(
+            **cfg.model.params, random_state=seed, early_stopping_rounds=20
+        )
+        scores = early_stopping_cv(
+            X_train, y_train, model, cfg, seed, preprocessor=StandardScaler()
+        )
+        print(f"Early stopping CV: {sum(scores) / len(scores):.4f}")

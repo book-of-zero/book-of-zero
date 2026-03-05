@@ -1,0 +1,24 @@
+# Experiment config — binary classification with XGBoost, 10-seed evaluation.
+
+experiment_name: model_comparison
+
+seeds: [42, 123, 456, 789, 1024, 2048, 3333, 5555, 7777, 9999]
+
+data:
+  path: data/processed/features_v1.parquet
+  target: is_fraud
+  test_size: 0.2
+  drop_columns: []
+  data_version: v1
+
+model:
+  name: xgboost
+  params:
+    n_estimators: 500
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+
+cv_splits: 5
+scoring: roc_auc

@@ -1,0 +1,133 @@
+"""Hyperparameter search with Optuna: search, freeze, evaluate.
+
+Requires config.py (from config.py.example) on the import path.
+"""
+
+import argparse
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+import mlflow
+import numpy as np
+import optuna
+import pandas as pd
+import yaml
+from sklearn.metrics import get_scorer
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
+
+from config import ExperimentConfig
+
+
+def make_objective(
+    X_train: pd.DataFrame, y_train: pd.Series, cfg: ExperimentConfig
+) -> Callable[[optuna.Trial], float]:
+    """Create an Optuna objective that logs each trial to MLflow."""
+
+    def objective(trial: optuna.Trial) -> float:
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 100, 1000),
+            "max_depth": trial.suggest_int("max_depth", 3, 10),
+            "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.3, log=True),
+            "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+        }
+
+        with mlflow.start_run(nested=True, run_name=f"trial_{trial.number}"):
+            mlflow.log_params(params)
+
+            pipe = Pipeline([
+                ("scaler", StandardScaler()),
+                ("model", XGBClassifier(**params, random_state=cfg.seeds[0])),
+            ])
+            cv = StratifiedKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=cfg.seeds[0])
+            scores = cross_val_score(pipe, X_train, y_train, cv=cv, scoring=cfg.scoring)
+            mean_score = scores.mean()
+
+            mlflow.log_metric(f"val_{cfg.scoring}", mean_score)
+
+        return mean_score
+
+    return objective
+
+
+def freeze_best_params(cfg: ExperimentConfig, best_params: dict[str, Any], output_path: str) -> None:
+    """Write the best params into a new config YAML — the reproducible record."""
+    best_cfg = cfg.model_copy(deep=True)
+    best_cfg.model.params = best_params
+
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(yaml.dump(best_cfg.model_dump(), default_flow_style=False))
+    print(f"Frozen config written to {output_path}")
+
+
+def evaluate_on_test(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    best_params: dict[str, Any],
+    cfg: ExperimentConfig,
+) -> None:
+    """Multi-seed test evaluation on held-out data — the final, unbiased estimate."""
+    scorer = get_scorer(cfg.scoring)
+    test_scores: list[float] = []
+
+    for seed in cfg.seeds:
+        pipe = Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", XGBClassifier(**best_params, random_state=seed)),
+        ])
+        pipe.fit(X_train, y_train)
+        test_scores.append(scorer(pipe, X_test, y_test))
+
+    with mlflow.start_run(run_name="final_test_evaluation"):
+        mlflow.log_params(best_params)
+        mlflow.log_metric(f"mean_test_{cfg.scoring}", np.mean(test_scores))
+        mlflow.log_metric(f"std_test_{cfg.scoring}", np.std(test_scores))
+
+    print(f"Test {cfg.scoring}: {np.mean(test_scores):.4f} ± {np.std(test_scores):.4f}")
+
+
+def main(config_path: str, n_trials: int) -> None:
+    cfg = ExperimentConfig.from_yaml(config_path)
+
+    df = pd.read_parquet(cfg.data.path)
+    X = df.drop(columns=[cfg.data.target] + cfg.data.drop_columns)
+    y = df[cfg.data.target]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=cfg.data.test_size, stratify=y, random_state=cfg.seeds[0]
+    )
+
+    mlflow.set_experiment(cfg.experiment_name)
+
+    with mlflow.start_run(run_name="hparam_search"):
+        study = optuna.create_study(
+            direction="maximize",
+            sampler=optuna.samplers.TPESampler(seed=cfg.seeds[0]),
+        )
+        study.optimize(make_objective(X_train, y_train, cfg), n_trials=n_trials)
+
+        mlflow.log_params(study.best_params)
+        mlflow.log_metric(f"best_val_{cfg.scoring}", study.best_value)
+
+    print(f"Best val {cfg.scoring}: {study.best_value:.4f}")
+    print(f"Best params: {study.best_params}")
+
+    frozen_path = f"configs/best_{cfg.model.name}.yaml"
+    freeze_best_params(cfg, study.best_params, frozen_path)
+
+    evaluate_on_test(X_train, y_train, X_test, y_test, study.best_params, cfg)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True, help="Path to YAML config")
+    parser.add_argument("--n-trials", type=int, default=100, help="Number of Optuna trials")
+    args = parser.parse_args()
+    main(args.config, args.n_trials)

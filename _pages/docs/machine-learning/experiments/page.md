@@ -13,6 +13,7 @@ This guide covers the practices that make ML experiments reproducible, comparabl
 ## On this page
 
 - [Key concepts](#key-concepts)
+- [Resources](#resources)
 - [Reproducibility contract](#reproducibility-contract)
   - [Source control](#source-control)
   - [Data immutability](#data-immutability)
@@ -49,6 +50,66 @@ This guide covers the practices that make ML experiments reproducible, comparabl
 - **Seed**: the starting state for random number generators. Fixing seeds makes stochastic processes repeatable.
 - **Baseline**: a reference model that sets the performance floor and bar. A trivial baseline (e.g., predict the majority class) proves the features carry signal; a simple baseline (e.g., logistic regression) proves the added complexity of a fancier model is justified.
 - **Config-driven experiment**: all parameters live in configuration files — the config is the single source of truth for what a run did.
+
+---
+
+## Resources
+
+<details class="boz-resource">
+  <summary><code>baseline.yaml.example</code></summary>
+
+{% highlight yaml %}
+{% include_relative baseline.yaml.example %}
+{% endhighlight %}
+</details>
+
+<details class="boz-resource">
+  <summary><code>config.py.example</code></summary>
+
+{% highlight python %}
+{% include_relative config.py.example %}
+{% endhighlight %}
+</details>
+
+<details class="boz-resource">
+  <summary><code>data_splitting.py.example</code></summary>
+
+{% highlight python %}
+{% include_relative data_splitting.py.example %}
+{% endhighlight %}
+</details>
+
+<details class="boz-resource">
+  <summary><code>train.py.example</code></summary>
+
+{% highlight python %}
+{% include_relative train.py.example %}
+{% endhighlight %}
+</details>
+
+<details class="boz-resource">
+  <summary><code>baselines.py.example</code></summary>
+
+{% highlight python %}
+{% include_relative baselines.py.example %}
+{% endhighlight %}
+</details>
+
+<details class="boz-resource">
+  <summary><code>hparam_search.py.example</code></summary>
+
+{% highlight python %}
+{% include_relative hparam_search.py.example %}
+{% endhighlight %}
+</details>
+
+<details class="boz-resource">
+  <summary><code>ablation.sh.example</code></summary>
+
+{% highlight bash %}
+{% include_relative ablation.sh.example %}
+{% endhighlight %}
+</details>
 
 ---
 
@@ -100,7 +161,7 @@ For classical ML with cross-validation, each seed × fold combination produces a
 | Publishable comparison | 10 | 50 |
 | High-stakes or noisy | 20+ | 100+ |
 
-If the standard deviation across seeds is large relative to the difference between models, the comparison is inconclusive — add more seeds or reconsider the experimental design. Use power analysis (see [Evaluation: statistical significance]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#statistical-significance)) to determine exactly how many you need.
+If the standard deviation across seeds is large relative to the difference between models, the comparison is inconclusive — add more seeds or reconsider the experimental design. See [Evaluation: statistical significance]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#statistical-significance) for guidance on minimum sample sizes and statistical tests to determine whether a difference is real.
 
 ### Environment pinning
 
@@ -210,34 +271,28 @@ When using cross-validation, passing this internal validation set through a scik
 To implement early stopping during cross-validation properly, you must either manually iterate over the fold indices and pass `eval_set=[(X_val, y_val)]` directly to the estimator's `fit` method, or use a library-specific integration (like `xgboost.sklearn`):
 
 ```python
-from sklearn.model_selection import StratifiedKFold
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import roc_auc_score
-from xgboost import XGBClassifier
-
+scorer = get_scorer(cfg.scoring)
 cv = StratifiedKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=seed)
 
 for fold, (train_idx, val_idx) in enumerate(cv.split(X_train, y_train)):
     X_fold_train, X_fold_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
     y_fold_train, y_fold_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
 
-    # Fit preprocessing on training fold only
     scaler = StandardScaler()
     X_fold_train_scaled = scaler.fit_transform(X_fold_train)
     X_fold_val_scaled = scaler.transform(X_fold_val)
 
-    # Pass eval_set directly to the estimator
     model = XGBClassifier(**cfg.model.params, random_state=seed, early_stopping_rounds=20)
     model.fit(
         X_fold_train_scaled, y_fold_train,
         eval_set=[(X_fold_val_scaled, y_fold_val)],
-        verbose=False
+        verbose=False,
     )
 
-    # Evaluate on the held-out fold
-    score = roc_auc_score(y_fold_val, model.predict_proba(X_fold_val_scaled)[:, 1])
-    print(f"Fold {fold}: {score:.4f} (stopped at iteration {model.best_iteration})")
+    score = scorer(model, X_fold_val_scaled, y_fold_val)
 ```
+
+The full early stopping CV loop is in `data_splitting.py.example` (see [Resources](#resources)).
 
 Never use the final test set for early stopping — this turns the test set into a validation set and leaks information directly into the model's stopping criteria.
 
@@ -273,16 +328,18 @@ cv_splits: 5
 scoring: roc_auc
 ```
 
-For ablation variants, copy the baseline and change one thing. Duplication is acceptable — readability and reproducibility matter more than DRY for experiment configs.
+A production-ready version with additional parameters is in `baseline.yaml.example` (see [Resources](#resources)). For ablation variants, copy the baseline and change one thing. Duplication is acceptable — readability and reproducibility matter more than DRY for experiment configs.
 
 ### Config model
 
 Define the config as a Pydantic model. Invalid configs fail immediately on load with a clear error — not silently at runtime halfway through a training run:
 
 ```python
-from pydantic import BaseModel, Field
-import yaml
 from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, Field
 
 
 class DataConfig(BaseModel):
@@ -290,11 +347,12 @@ class DataConfig(BaseModel):
     target: str
     test_size: float = Field(default=0.2, gt=0, lt=1)
     drop_columns: list[str] = []
+    data_version: str = "v1"
 
 
 class ModelConfig(BaseModel):
     name: str
-    params: dict = {}
+    params: dict[str, Any] = {}
 
 
 class ExperimentConfig(BaseModel):
@@ -311,7 +369,7 @@ class ExperimentConfig(BaseModel):
         return cls(**raw)
 ```
 
-Load and use:
+The complete config module with CLI validation is in `config.py.example` (see [Resources](#resources)). Load and use:
 
 ```python
 config_path = "configs/baseline.yaml"
@@ -365,63 +423,37 @@ Autolog captures: estimator parameters (via `get_params(deep=True)`), training m
 
 ### Explicit logging
 
-Add explicit logging for config snapshots, custom metrics, tags, and artifacts that autolog does not cover. `mlflow.log_params()` only accepts flat dicts — nested dicts get stringified into unreadable blobs. Log each level explicitly:
+Add explicit logging for custom metrics, tags, and artifacts that autolog does not cover. The snippet below covers the core loop — config snapshot logging is shown in `train.py.example` (see [Resources](#resources)). `mlflow.log_params()` only accepts flat dicts — nested dicts get stringified into unreadable blobs. Log each level explicitly:
 
 ```python
-import time
-import mlflow
-import pandas as pd
-from sklearn.model_selection import cross_validate, cross_val_predict, StratifiedKFold, train_test_split
-from xgboost import XGBClassifier
-
-config_path = "configs/baseline.yaml"
-cfg = ExperimentConfig.from_yaml(config_path)
-
-df = pd.read_parquet(cfg.data.path)
-X, y = df.drop(columns=[cfg.data.target]), df[cfg.data.target]
-
-# Hold out the test set before any training or tuning
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=cfg.data.test_size, stratify=y, random_state=cfg.seeds[0]
-)
-
-mlflow.set_experiment(cfg.experiment_name)
-
 for seed in cfg.seeds:
     with mlflow.start_run(run_name=f"{cfg.model.name}_seed{seed}"):
-        # Flat dicts only — log model params and metadata separately
         mlflow.log_params(cfg.model.params)
         mlflow.log_params({"seed": seed, "model_name": cfg.model.name, "scoring": cfg.scoring})
+        mlflow.set_tag("data_version", cfg.data.data_version)
 
-        # Tags for filtering in the UI (git hash is auto-logged)
-        mlflow.set_tag("data_version", "v1")
-
-        start_time = time.time()
+        start_time = time.monotonic()
 
         model = XGBClassifier(**cfg.model.params, random_state=seed)
         cv = StratifiedKFold(n_splits=cfg.cv_splits, shuffle=True, random_state=seed)
-        
+
         results = cross_validate(model, X_train, y_train, cv=cv, scoring=cfg.scoring)
-        
-        # Out-of-fold predictions enable ensembling and deep error analysis without retraining
         oof_preds = cross_val_predict(model, X_train, y_train, cv=cv, method="predict_proba")[:, 1]
-        
-        mlflow.log_metric("training_duration_seconds", time.time() - start_time)
 
-        pd.DataFrame({"oof_pred": oof_preds}).to_parquet(f"oof_seed{seed}.parquet")
-        mlflow.log_artifact(f"oof_seed{seed}.parquet")
-
+        mlflow.log_metric("training_duration_seconds", time.monotonic() - start_time)
         mlflow.log_metric(f"mean_{cfg.scoring}", results["test_score"].mean())
         mlflow.log_metric(f"std_{cfg.scoring}", results["test_score"].std())
 
-        # Per-fold scores — needed for paired statistical tests
         for i, score in enumerate(results["test_score"]):
             mlflow.log_metric(f"fold_{cfg.scoring}", score, step=i)
 
-# Log the config file once as an artifact (outside the seed loop)
-with mlflow.start_run(run_name="config_snapshot"):
-    mlflow.log_artifact(config_path)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            oof_path = Path(tmp_dir) / f"oof_seed{seed}.parquet"
+            pd.DataFrame({"oof_pred": oof_preds}).to_parquet(oof_path)
+            mlflow.log_artifact(str(oof_path))
 ```
+
+The complete training script is in `train.py.example` (see [Resources](#resources)).
 
 | Category | What | How |
 |----------|------|-----|
@@ -467,10 +499,15 @@ Before comparing complex models, establish what "good" means. Two baselines set 
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 baselines = {
     "dummy": DummyClassifier(strategy="most_frequent"),
-    "logistic": LogisticRegression(max_iter=1000, random_state=seed),
+    "logistic": Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", LogisticRegression(max_iter=1000, random_state=seed)),
+    ]),
 }
 
 # Run inside the seed loop (for seed in cfg.seeds:)
@@ -480,7 +517,7 @@ for name, model in baselines.items():
     print(f"{name}: {scores.mean():.4f} ± {scores.std():.4f}")
 ```
 
-Run baselines first. If a complex model cannot beat a tuned logistic regression by a meaningful margin, the complexity is not worth the cost.
+The full baseline script with MLflow logging and multi-seed evaluation is in `baselines.py.example` (see [Resources](#resources)). Run baselines first. If a complex model cannot beat a tuned logistic regression by a meaningful margin, the complexity is not worth the cost.
 
 ### Error analysis
 
@@ -522,12 +559,6 @@ The config records *what worked*. The code defines *how you searched*. Both are 
 Use Optuna for Bayesian optimization with MLflow tracking:
 
 ```python
-import optuna
-from sklearn.model_selection import cross_val_score, StratifiedKFold
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from xgboost import XGBClassifier
-
 def objective(trial):
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 100, 1000),
@@ -550,20 +581,16 @@ def objective(trial):
 
     return mean_score
 
-mlflow.set_experiment(cfg.experiment_name)
-
-with mlflow.start_run(run_name="hparam_search"):
-    study = optuna.create_study(
-        direction="maximize",
-        sampler=optuna.samplers.TPESampler(seed=cfg.seeds[0]),
-    )
-    study.optimize(objective, n_trials=100)
-
-    mlflow.log_params(study.best_params)
-    mlflow.log_metric(f"best_val_{cfg.scoring}", study.best_value)
+study = optuna.create_study(
+    direction="maximize",
+    sampler=optuna.samplers.TPESampler(seed=cfg.seeds[0]),
+)
+study.optimize(objective, n_trials=100)
 ```
 
-Each trial is a nested MLflow run under a parent search run, so the full history is visible in the MLflow UI.
+The full search-freeze-evaluate lifecycle is in `hparam_search.py.example` (see [Resources](#resources)).
+
+The inline snippet shows the trial-level logging. In practice, wrap `study.optimize(...)` inside a parent run (`with mlflow.start_run(run_name="hparam_search"):`) so each trial is a nested child — the MLflow UI renders this hierarchy for easy comparison. The full nested-run setup is in `hparam_search.py.example` (see [Resources](#resources)).
 
 <p align="center">
   <img src="{{ "/assets/images/plots/optuna_history.svg" | relative_url }}" alt="Hyperparameter search history showing trial scores and running best with plateau annotation">
@@ -596,12 +623,8 @@ python train.py --config configs/best_xgboost.yaml
 Then evaluate the held-out test set — this is the final, unbiased estimate. Use the same pipeline that was used during cross-validation so preprocessing is consistent. Train across all seeds to confirm stability:
 
 ```python
-import numpy as np
-from sklearn.metrics import roc_auc_score
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-
-test_aucs = []
+scorer = get_scorer(cfg.scoring)
+test_scores = []
 
 for seed in cfg.seeds:
     pipe = Pipeline([
@@ -609,16 +632,12 @@ for seed in cfg.seeds:
         ("model", XGBClassifier(**study.best_params, random_state=seed)),
     ])
     pipe.fit(X_train, y_train)
-    y_prob = pipe.predict_proba(X_test)[:, 1]
-    test_aucs.append(roc_auc_score(y_test, y_prob))
-
-with mlflow.start_run(run_name="final_test_evaluation"):
-    mlflow.log_params(study.best_params)
-    mlflow.log_metric("mean_test_auc", np.mean(test_aucs))
-    mlflow.log_metric("std_test_auc", np.std(test_aucs))
+    test_scores.append(scorer(pipe, X_test, y_test))
 ```
 
-If the mean test AUC is substantially lower than the cross-validation AUC, the model is overfitting to the training distribution. If the standard deviation across seeds is large, the model is unstable. Do not go back and tune — that turns the test set into a validation set.
+The full evaluation with MLflow logging is in `hparam_search.py.example` (see [Resources](#resources)).
+
+If the mean test score is substantially lower than the cross-validation score, the model is overfitting to the training distribution. If the standard deviation across seeds is large, the model is unstable. Do not go back and tune — that turns the test set into a validation set. This held-out score is the final check — it confirms the model generalizes. For classifiers, you still need to choose an operating threshold aligned with your business costs (see [Evaluation: threshold tuning]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#threshold-tuning-and-evaluation)).
 
 **Small datasets**: when the dataset is too small for a reliable held-out test set (roughly n < 1,000), the holdout estimate has high variance. Use nested cross-validation instead: an outer loop evaluates generalization while an inner loop selects hyperparameters. This gives an unbiased performance estimate without sacrificing data. The cost is computational — 5-fold outer × 5-fold inner × 100 trials is expensive, so reserve nested CV for settings where every sample counts.
 
@@ -645,7 +664,7 @@ for config in configs/ablation_*.yaml; do
 done
 ```
 
-Report ablation results as a table: each row is a variant, columns show the metric mean ± std, and the delta from the control. This is the format reviewers expect:
+A shell runner with config validation is in `ablation.sh.example` (see [Resources](#resources)). Report ablation results as a table: each row is a variant, columns show the metric mean ± std, and the delta from the control. This is the format reviewers expect:
 
 | Variant | AUC (mean ± std) | Δ vs. control | p-value |
 |---------|-------------------|---------------|---------|
