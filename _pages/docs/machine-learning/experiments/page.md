@@ -88,6 +88,14 @@ This guide covers the practices that make ML experiments reproducible, comparabl
 </details>
 
 <details class="boz-resource">
+  <summary><code>test.py.example</code></summary>
+
+{% highlight python %}
+{% include_relative test.py.example %}
+{% endhighlight %}
+</details>
+
+<details class="boz-resource">
   <summary><code>baselines.py.example</code></summary>
 
 {% highlight python %}
@@ -620,7 +628,13 @@ Run the frozen config across all seeds to get the validation results you report:
 python train.py --config configs/best_xgboost.yaml
 ```
 
-Then evaluate the held-out test set — this is the final, unbiased estimate. Use the same pipeline that was used during cross-validation so preprocessing is consistent. Train across all seeds to confirm stability:
+Then evaluate the held-out test set — this is the final, unbiased estimate. Use the same pipeline that was used during cross-validation so preprocessing is consistent. Train across all seeds to confirm stability. The `--threshold` flag also evaluates precision, recall, and F1 at the given operating point:
+
+```bash
+python test.py --config configs/best_xgboost.yaml --threshold 0.5
+```
+
+The core loop fits each seed and scores with `get_scorer(cfg.scoring)`:
 
 ```python
 scorer = get_scorer(cfg.scoring)
@@ -635,9 +649,9 @@ for seed in cfg.seeds:
     test_scores.append(scorer(pipe, X_test, y_test))
 ```
 
-The full evaluation with MLflow logging is in `hparam_search.py.example` (see [Resources](#resources)).
+The full held-out evaluation — including thresholded metrics and MLflow logging — is in `test.py.example` (see [Resources](#resources)).
 
-If the mean test score is substantially lower than the cross-validation score, the model is overfitting to the training distribution. If the standard deviation across seeds is large, the model is unstable. Do not go back and tune — that turns the test set into a validation set. This held-out score is the final check — it confirms the model generalizes. For classifiers, you still need to choose an operating threshold aligned with your business costs (see [Evaluation: threshold tuning]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#threshold-tuning-and-evaluation)).
+If the mean test score is substantially lower than the cross-validation score, the model is overfitting to the training distribution. If the standard deviation across seeds is large, the model is unstable. Do not go back and tune — that turns the test set into a validation set. This held-out score is the final check — it confirms the model generalizes. For classifiers, `test.py.example` evaluates at a given threshold; see [Evaluation: threshold tuning]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#threshold-tuning-and-evaluation) for how to choose that threshold.
 
 **Small datasets**: when the dataset is too small for a reliable held-out test set (roughly n < 1,000), the holdout estimate has high variance. Use nested cross-validation instead: an outer loop evaluates generalization while an inner loop selects hyperparameters. This gives an unbiased performance estimate without sacrificing data. The cost is computational — 5-fold outer × 5-fold inner × 100 trials is expensive, so reserve nested CV for settings where every sample counts.
 
