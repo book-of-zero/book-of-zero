@@ -31,6 +31,7 @@ Chunking is not preprocessing. It's architecture. A chunk is your retrieval unit
   - [What metadata to track](#what-metadata-to-track)
   - [Metadata structure](#metadata-structure)
   - [Metadata in practice](#metadata-in-practice)
+  - [Contextual chunk headers (CCH)](#contextual-chunk-headers-cch)
 - [Vector storage](#vector-storage)
 - [Chunking evaluation](#chunking-evaluation)
 - [Workflow: building an index](#workflow-building-an-index)
@@ -714,7 +715,7 @@ metadata = {
 metadata = {
     "document": {
         "source": "handbook.pdf",
-        "type": "pdf",
+        "doc_type": "pdf",
     },
     "content": {
         "category": "hr",
@@ -773,7 +774,7 @@ for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
 - **Recency boosting**: Rank recent documents higher
 - **Attribution**: Show users "Source: hipaa_guide.pdf, Page 5"
 - **Access control**: Filter by user permissions (soft boosting via access_level)
-- **Hard security filtering**: Physically block unauthorized chunks via RBAC metadata (roles, departments, permissions). See [retrieval filtering]({{ site.baseurl }}/docs/genai/rag/retrieval/#hard-security-filtering-rbac) for implementation.
+- **Hard security filtering**: Physically block unauthorized chunks via RBAC metadata (roles, departments, permissions). See [retrieval filtering]({{ site.baseurl }}/docs/genai/rag/retrieval/page/#hard-security-filtering-rbac) for implementation.
 - **Deduplication**: Skip reindexing unchanged documents (via doc_hash)
 
 ### Contextual chunk headers (CCH)
@@ -1019,7 +1020,7 @@ client.create_collection(
 
 # Insert chunks
 points = [
-    PointStruct(id=i, vector=embedding.tolist(), payload={"text": chunk, "metadata": {...}})
+    PointStruct(id=i, vector=embedding.tolist(), payload={"text": chunk, "chunk_index": i})
     for i, (embedding, chunk) in enumerate(zip(embeddings, chunks))
 ]
 client.upsert(collection_name="documents", points=points)
@@ -1068,7 +1069,7 @@ index.hnsw.efSearch = 50
 
 **When recall matters**: High-stakes retrieval where missing the best chunk degrades quality (medical Q&A, legal search). Optimize for recall.
 
-**When recall doesn't matter**: You're retrieving 50 chunks and reranking to 5 (see [RAG Retrieval]({{ site.baseurl }}/docs/genai/rag/retrieval/page)). The reranker fixes approximate errors. Optimize for latency.
+**When recall doesn't matter**: You're retrieving 50 chunks and reranking to 5 (see [RAG Retrieval]({{ site.baseurl }}/docs/genai/rag/retrieval/page/)). The reranker fixes approximate errors. Optimize for latency.
 
 ### Production patterns
 
@@ -1504,7 +1505,7 @@ class MultiTypeIndexer(ProductionIndexer):
 
     def index_document(self, doc_id: str, text: str, metadata: Dict) -> int:
         """Override to use type-specific chunking."""
-        doc_type = metadata.get("type", "text")
+        doc_type = metadata.get("doc_type", "text")
 
         # Use type-specific chunker
         chunks = self.chunk_by_type(text, doc_type)
@@ -1521,9 +1522,9 @@ class MultiTypeIndexer(ProductionIndexer):
 indexer = MultiTypeIndexer(collection_name="multi_type_kb")
 
 documents = [
-    {"doc_id": "readme", "text": "# API Docs\n## Authentication...", "metadata": {"type": "markdown"}},
-    {"doc_id": "utils.py", "text": "def compute():\n    ...", "metadata": {"type": "code", "language": "python"}},
-    {"doc_id": "report.pdf", "text": "/path/to/report.pdf", "metadata": {"type": "pdf"}},
+    {"doc_id": "readme", "text": "# API Docs\n## Authentication...", "metadata": {"doc_type": "markdown"}},
+    {"doc_id": "utils.py", "text": "def compute():\n    ...", "metadata": {"doc_type": "code", "language": "python"}},
+    {"doc_id": "report.pdf", "text": "/path/to/report.pdf", "metadata": {"doc_type": "pdf"}},
 ]
 
 indexer.index_batch(documents)
@@ -1531,7 +1532,7 @@ indexer.index_batch(documents)
 
 **Why type-aware chunking matters**: A PDF split mid-table is useless. A code file split mid-function is unreadable. Markdown without headers loses context. Type-specific splitters respect document structure.
 
-**Metadata for type filtering**: Tag chunks with `type="code"` or `type="pdf"`. At retrieval time, filter by type: "only search markdown documentation" or "only search Python code".
+**Metadata for type filtering**: Tag chunks with `doc_type="code"` or `doc_type="pdf"`. At retrieval time, filter by type: "only search markdown documentation" or "only search Python code".
 
 ---
 
@@ -1674,7 +1675,7 @@ Retrieval costs depend on query volume and reranking complexity.
 - **Hybrid (Qdrant Cloud)**: Best for 3-10 engineers, balance cost/features, budget $100-150/month
 - **Self-hosted**: Best for >10 engineers, DevOps expertise, budget <$100/month, high query volume (cost advantage at scale)
 
-**When cost justifies investment**: RAG systems that reduce support costs (deflect 30-50% of tickets), enable new revenue (enterprise contracts requiring search), or prevent compliance violations (RBAC = avoid HIPAA/GDPR fines) typically achieve ROI within 6-12 months. See [retrieval RBAC business value]({{ site.baseurl }}/docs/genai/rag/retrieval/#hard-security-filtering-rbac) for ROI calculations.
+**When cost justifies investment**: RAG systems that reduce support costs (deflect 30-50% of tickets), enable new revenue (enterprise contracts requiring search), or prevent compliance violations (RBAC = avoid HIPAA/GDPR fines) typically achieve ROI within 6-12 months. See [retrieval RBAC business value]({{ site.baseurl }}/docs/genai/rag/retrieval/page/#hard-security-filtering-rbac) for ROI calculations.
 
 **Sources**:
 - [OpenAI Embeddings Pricing (Feb 2026)](https://platform.openai.com/docs/pricing)

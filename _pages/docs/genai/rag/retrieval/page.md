@@ -24,6 +24,8 @@ Fast retrieval uses two-tower architectures and approximate nearest neighbor sea
   - [BM25 sparse retrieval](#bm25-sparse-retrieval)
   - [Hybrid search](#hybrid-search)
 - [Stage 2: Reranking](#stage-2-reranking)
+  - [Cross-encoder architecture](#cross-encoder-architecture)
+  - [When reranking matters](#when-reranking-matters)
   - [ColBERT (Late Interaction)](#colbert-late-interaction)
 - [Search-time index tuning](#search-time-index-tuning)
 - [Query optimization](#query-optimization)
@@ -31,7 +33,11 @@ Fast retrieval uses two-tower architectures and approximate nearest neighbor sea
   - [Conversational query rewriting](#conversational-query-rewriting)
   - [Query decomposition](#query-decomposition)
   - [Metadata filtering and boosting](#metadata-filtering-and-boosting)
+    - [Filtering](#filtering)
     - [Hard security filtering (RBAC)](#hard-security-filtering-rbac)
+    - [Score boosting](#score-boosting)
+    - [Positional boosting](#positional-boosting)
+    - [Context enrichment](#context-enrichment)
   - [Advanced query techniques](#advanced-query-techniques)
 - [Result optimization](#result-optimization)
   - [MMR (Maximal Marginal Relevance)](#mmr-maximal-marginal-relevance)
@@ -1687,7 +1693,7 @@ Regular testing ensures RBAC works as designed:
 - **Storage**: Use append-only audit log storage (prevents tampering) with encryption at rest
 - **Access controls**: Limit audit log access to security team and compliance officers (prevent log manipulation by unauthorized users)
 
-**Cross-references**: See [indexing metadata strategy]({{ site.baseurl }}/docs/genai/rag/indexing/#metadata-strategy) for how to structure RBAC fields at indexing time.
+**Cross-references**: See [indexing metadata strategy]({{ site.baseurl }}/docs/genai/rag/indexing/page/#metadata-strategy) for how to structure RBAC fields at indexing time.
 
 ---
 
@@ -3851,7 +3857,7 @@ RAG systems have failure modes that impact business outcomes. This section ident
 - **Impact**: Customer A sees Customer B's data, contract breach, lawsuit, customer churn (100% of affected customers)
 - **Probability**: Medium (if RBAC not implemented), Low (if RBAC implemented correctly)
 - **Mitigation**:
-  - **Implement RBAC**: Hard filtering at query time, physically block unauthorized chunks (see [RBAC section]({{ site.baseurl }}/docs/genai/rag/retrieval/#hard-security-filtering-rbac))
+  - **Implement RBAC**: Hard filtering at query time, physically block unauthorized chunks (see [RBAC section]({{ site.baseurl }}/docs/genai/rag/retrieval/page/#hard-security-filtering-rbac))
   - **Penetration testing**: Quarterly security audit (attempt to access other tenants' data)
   - **Audit logging**: Log all queries with user_id, alert on cross-tenant access attempts
   - **Regression testing**: Automated test suite validates RBAC filters work correctly (run on every deployment)
