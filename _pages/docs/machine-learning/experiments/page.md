@@ -56,66 +56,66 @@ This guide covers the practices that make ML experiments reproducible, comparabl
 ## Resources
 
 <details class="boz-resource">
-  <summary><code>baseline.yaml.example</code></summary>
+  <summary><code>baseline.example.yaml</code></summary>
 
 {% highlight yaml %}
-{% include_relative baseline.yaml.example %}
+{% include_relative baseline.example.yaml %}
 {% endhighlight %}
 </details>
 
 <details class="boz-resource">
-  <summary><code>config.py.example</code></summary>
+  <summary><code>config.example.py</code></summary>
 
 {% highlight python %}
-{% include_relative config.py.example %}
+{% include_relative config.example.py %}
 {% endhighlight %}
 </details>
 
 <details class="boz-resource">
-  <summary><code>data_splitting.py.example</code></summary>
+  <summary><code>data_splitting.example.py</code></summary>
 
 {% highlight python %}
-{% include_relative data_splitting.py.example %}
+{% include_relative data_splitting.example.py %}
 {% endhighlight %}
 </details>
 
 <details class="boz-resource">
-  <summary><code>train.py.example</code></summary>
+  <summary><code>train.example.py</code></summary>
 
 {% highlight python %}
-{% include_relative train.py.example %}
+{% include_relative train.example.py %}
 {% endhighlight %}
 </details>
 
 <details class="boz-resource">
-  <summary><code>test.py.example</code></summary>
+  <summary><code>test.example.py</code></summary>
 
 {% highlight python %}
-{% include_relative test.py.example %}
+{% include_relative test.example.py %}
 {% endhighlight %}
 </details>
 
 <details class="boz-resource">
-  <summary><code>baselines.py.example</code></summary>
+  <summary><code>baselines.example.py</code></summary>
 
 {% highlight python %}
-{% include_relative baselines.py.example %}
+{% include_relative baselines.example.py %}
 {% endhighlight %}
 </details>
 
 <details class="boz-resource">
-  <summary><code>hparam_search.py.example</code></summary>
+  <summary><code>hparam_search.example.py</code></summary>
 
 {% highlight python %}
-{% include_relative hparam_search.py.example %}
+{% include_relative hparam_search.example.py %}
 {% endhighlight %}
 </details>
 
 <details class="boz-resource">
-  <summary><code>ablation.sh.example</code></summary>
+  <summary><code>ablation.example.sh</code></summary>
 
 {% highlight bash %}
-{% include_relative ablation.sh.example %}
+{% include_relative ablation.example.sh %}
 {% endhighlight %}
 </details>
 
@@ -300,7 +300,7 @@ for fold, (train_idx, val_idx) in enumerate(cv.split(X_train, y_train)):
     score = scorer(model, X_fold_val_scaled, y_fold_val)
 ```
 
-The full early stopping CV loop is in `data_splitting.py.example` (see [Resources](#resources)).
+The full early stopping CV loop is in `data_splitting.example.py` (see [Resources](#resources)).
 
 Never use the final test set for early stopping — this turns the test set into a validation set and leaks information directly into the model's stopping criteria.
 
@@ -336,7 +336,7 @@ cv_splits: 5
 scoring: roc_auc
 ```
 
-A production-ready version with additional parameters is in `baseline.yaml.example` (see [Resources](#resources)). For ablation variants, copy the baseline and change one thing. Duplication is acceptable — readability and reproducibility matter more than DRY for experiment configs.
+A production-ready version with additional parameters is in `baseline.example.yaml` (see [Resources](#resources)). For ablation variants, copy the baseline and change one thing. Duplication is acceptable — readability and reproducibility matter more than DRY for experiment configs.
 
 ### Config model
 
@@ -377,7 +377,7 @@ class ExperimentConfig(BaseModel):
         return cls(**raw)
 ```
 
-The complete config module with CLI validation is in `config.py.example` (see [Resources](#resources)). Load and use:
+The complete config module with CLI validation is in `config.example.py` (see [Resources](#resources)). Load and use:
 
 ```python
 config_path = "configs/baseline.yaml"
@@ -431,7 +431,7 @@ Autolog captures: estimator parameters (via `get_params(deep=True)`), training m
 
 ### Explicit logging
 
-Add explicit logging for custom metrics, tags, and artifacts that autolog does not cover. The snippet below covers the core loop — config snapshot logging is shown in `train.py.example` (see [Resources](#resources)). `mlflow.log_params()` only accepts flat dicts — nested dicts get stringified into unreadable blobs. Log each level explicitly:
+Add explicit logging for custom metrics, tags, and artifacts that autolog does not cover. The snippet below covers the core loop — config snapshot logging is shown in `train.example.py` (see [Resources](#resources)). `mlflow.log_params()` only accepts flat dicts — nested dicts get stringified into unreadable blobs. Log each level explicitly:
 
 ```python
 for seed in cfg.seeds:
@@ -461,7 +461,7 @@ for seed in cfg.seeds:
             mlflow.log_artifact(str(oof_path))
 ```
 
-The complete training script is in `train.py.example` (see [Resources](#resources)).
+The complete training script is in `train.example.py` (see [Resources](#resources)).
 
 | Category | What | How |
 |----------|------|-----|
@@ -525,7 +525,7 @@ for name, model in baselines.items():
     print(f"{name}: {scores.mean():.4f} ± {scores.std():.4f}")
 ```
 
-The full baseline script with MLflow logging and multi-seed evaluation is in `baselines.py.example` (see [Resources](#resources)). Run baselines first. If a complex model cannot beat a tuned logistic regression by a meaningful margin, the complexity is not worth the cost.
+The full baseline script with MLflow logging and multi-seed evaluation is in `baselines.example.py` (see [Resources](#resources)). Run baselines first. If a complex model cannot beat a tuned logistic regression by a meaningful margin, the complexity is not worth the cost.
 
 ### Error analysis
 
@@ -596,9 +596,9 @@ study = optuna.create_study(
 study.optimize(objective, n_trials=100)
 ```
 
-The full search-freeze-evaluate lifecycle is in `hparam_search.py.example` (see [Resources](#resources)).
+The full search-freeze-evaluate lifecycle is in `hparam_search.example.py` (see [Resources](#resources)).
 
-The inline snippet shows the trial-level logging. In practice, wrap `study.optimize(...)` inside a parent run (`with mlflow.start_run(run_name="hparam_search"):`) so each trial is a nested child — the MLflow UI renders this hierarchy for easy comparison. The full nested-run setup is in `hparam_search.py.example` (see [Resources](#resources)).
+The inline snippet shows the trial-level logging. In practice, wrap `study.optimize(...)` inside a parent run (`with mlflow.start_run(run_name="hparam_search"):`) so each trial is a nested child — the MLflow UI renders this hierarchy for easy comparison. The full nested-run setup is in `hparam_search.example.py` (see [Resources](#resources)).
 
 <p align="center">
   <img src="{{ "/assets/images/plots/optuna_history.svg" | relative_url }}" alt="Hyperparameter search history showing trial scores and running best with plateau annotation">
@@ -649,9 +649,9 @@ for seed in cfg.seeds:
     test_scores.append(scorer(pipe, X_test, y_test))
 ```
 
-The full held-out evaluation — including thresholded metrics and MLflow logging — is in `test.py.example` (see [Resources](#resources)).
+The full held-out evaluation — including thresholded metrics and MLflow logging — is in `test.example.py` (see [Resources](#resources)).
 
-If the mean test score is substantially lower than the cross-validation score, the model is overfitting to the training distribution. If the standard deviation across seeds is large, the model is unstable. Do not go back and tune — that turns the test set into a validation set. This held-out score is the final check — it confirms the model generalizes. For classifiers, `test.py.example` evaluates at a given threshold; see [Evaluation: threshold tuning]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#threshold-tuning-and-evaluation) for how to choose that threshold.
+If the mean test score is substantially lower than the cross-validation score, the model is overfitting to the training distribution. If the standard deviation across seeds is large, the model is unstable. Do not go back and tune — that turns the test set into a validation set. This held-out score is the final check — it confirms the model generalizes. For classifiers, `test.example.py` evaluates at a given threshold; see [Evaluation: threshold tuning]({{ site.baseurl }}/docs/machine-learning/evaluation/page/#threshold-tuning-and-evaluation) for how to choose that threshold.
 
 **Small datasets**: when the dataset is too small for a reliable held-out test set (roughly n < 1,000), the holdout estimate has high variance. Use nested cross-validation instead: an outer loop evaluates generalization while an inner loop selects hyperparameters. This gives an unbiased performance estimate without sacrificing data. The cost is computational — 5-fold outer × 5-fold inner × 100 trials is expensive, so reserve nested CV for settings where every sample counts.
 
@@ -678,7 +678,7 @@ for config in configs/ablation_*.yaml; do
 done
 ```
 
-A shell runner with config validation is in `ablation.sh.example` (see [Resources](#resources)). Report ablation results as a table: each row is a variant, columns show the metric mean ± std, and the delta from the control. This is the format reviewers expect:
+A shell runner with config validation is in `ablation.example.sh` (see [Resources](#resources)). Report ablation results as a table: each row is a variant, columns show the metric mean ± std, and the delta from the control. This is the format reviewers expect:
 
 | Variant | AUC (mean ± std) | Δ vs. control | p-value |
 |---------|-------------------|---------------|---------|

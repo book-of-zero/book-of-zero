@@ -38,8 +38,8 @@ This page assumes Docker and Docker Compose are installed. If you are new to Doc
 
 1. Copy the examples into conventional names at the project root:
    - `_pages/docs/containerization/docker/Dockerfile.example` → `Dockerfile`
-   - `_pages/docs/containerization/docker-compose/docker-compose.yaml.example` → `docker-compose.yaml`
-   - `_pages/docs/containerization/docker-compose/docker-compose.hardened.yaml.example` → `docker-compose.hardened.yaml` if you want a production-like posture
+   - `_pages/docs/containerization/docker-compose/docker-compose.example.yaml` → `docker-compose.yaml`
+   - `_pages/docs/containerization/docker-compose/docker-compose.hardened.example.yaml` → `docker-compose.hardened.yaml` if you want a production-like posture
 2. Create the env files for compose:
    - **`.env`**: used by compose for `${...}` variable substitution and passed into the container at runtime via `env_file` (application configuration).
 3. Start the service:
@@ -98,18 +98,18 @@ If your local workflow needs live code reload, prefer making that an explicit co
 Use these templates when you want a baseline quickly, then customize for your application.
 
 <details class="boz-resource">
-  <summary><code>docker-compose.yaml.example</code></summary>
+  <summary><code>docker-compose.example.yaml</code></summary>
 
 {% highlight yaml %}
-{% include_relative docker-compose.yaml.example %}
+{% include_relative docker-compose.example.yaml %}
 {% endhighlight %}
 </details>
 
 <details class="boz-resource">
-  <summary><code>docker-compose.hardened.yaml.example</code></summary>
+  <summary><code>docker-compose.hardened.example.yaml</code></summary>
 
 {% highlight yaml %}
-{% include_relative docker-compose.hardened.yaml.example %}
+{% include_relative docker-compose.hardened.example.yaml %}
 {% endhighlight %}
 </details>
 
@@ -117,9 +117,9 @@ Use these templates when you want a baseline quickly, then customize for your ap
 
 ## Compose configuration reference
 
-An example compose file is provided at `_pages/docs/containerization/docker-compose/docker-compose.yaml.example` as a baseline starting point for running the container locally.
+An example compose file is provided at `_pages/docs/containerization/docker-compose/docker-compose.example.yaml` as a baseline starting point for running the container locally.
 
-An optional hardened override is provided at `_pages/docs/containerization/docker-compose/docker-compose.hardened.yaml.example`. It is designed to layer on top of the baseline file so you can switch between a low-friction dev posture and a production-like posture with a single additional `-f` flag.
+An optional hardened override is provided at `_pages/docs/containerization/docker-compose/docker-compose.hardened.example.yaml`. It is designed to layer on top of the baseline file so you can switch between a low-friction dev posture and a production-like posture with a single additional `-f` flag.
 
 ### When to use each compose field
 

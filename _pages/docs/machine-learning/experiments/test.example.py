@@ -1,6 +1,6 @@
 """Final held-out test evaluation for a frozen experiment config.
 
-Requires config.py (from config.py.example) on the import path.
+Requires config.py (from config.example.py) on the import path.
 """
 
 import argparse

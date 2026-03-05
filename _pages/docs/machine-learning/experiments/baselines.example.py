@@ -1,6 +1,6 @@
 """Baseline evaluation with DummyClassifier and LogisticRegression.
 
-Requires config.py (from config.py.example) on the import path.
+Requires config.py (from config.example.py) on the import path.
 """
 
 import argparse

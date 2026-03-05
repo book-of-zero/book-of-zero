@@ -1,6 +1,6 @@
 """Multi-seed training with cross-validation and MLflow tracking.
 
-Requires config.py (from config.py.example) on the import path.
+Requires config.py (from config.example.py) on the import path.
 """
 
 import argparse

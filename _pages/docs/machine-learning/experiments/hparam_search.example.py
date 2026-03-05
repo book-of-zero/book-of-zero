@@ -1,6 +1,6 @@
 """Hyperparameter search with Optuna: search, freeze, evaluate.
 
-Requires config.py (from config.py.example) on the import path.
+Requires config.py (from config.example.py) on the import path.
 """
 
 import argparse

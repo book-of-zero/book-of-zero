@@ -43,10 +43,10 @@ A **system prompt** is the model's operating contract: it defines what the assis
 ## Resources
 
 <details class="boz-resource">
-  <summary><code>system-prompt.md.example</code></summary>
+  <summary><code>system-prompt.example.md</code></summary>
 
 {% highlight text %}
-{% include_relative system-prompt.md.example %}
+{% include_relative system-prompt.example.md %}
 {% endhighlight %}
 </details>
 
@@ -78,7 +78,7 @@ Not every prompt needs every section. A simple assistant might use only prioriti
 - **Keep prompts focused**: Performance degrades as input length grows. Use the base + overlay pattern rather than one monolithic prompt.
 - **Resolve contradictions explicitly**: No "be exhaustive" + "be concise." Use priority order instead.
 
-The reference file (`system-prompt.md.example`) demonstrates this skeleton as a **Python backend coding assistant**, scoped for enterprise backends with strong typing. The sections, ordering, and rationale are model-agnostic. The following sections walk through each tag using the reference prompt. Tags not present in the reference (`<tool_use>`, `<examples>`, `<style>`) are covered with standalone examples.
+The reference file (`system-prompt.example.md`) demonstrates this skeleton as a **Python backend coding assistant**, scoped for enterprise backends with strong typing. The sections, ordering, and rationale are model-agnostic. The following sections walk through each tag using the reference prompt. Tags not present in the reference (`<tool_use>`, `<examples>`, `<style>`) are covered with standalone examples.
 
 ---
 
