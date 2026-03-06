@@ -44,17 +44,12 @@ Chunking is not preprocessing. It's architecture. A chunk is your retrieval unit
 
 ## Key concepts
 
-**Chunk**: The atomic retrieval unit in RAG. A contiguous text segment that must be meaningful in isolation.
-
-**Chunk size**: Target length in tokens or characters. Typical range: 256-800 tokens. Smaller chunks increase precision at the cost of context.
-
-**Chunk overlap**: Tokens shared between consecutive chunks to prevent information loss at boundaries. Typical: 10-20% of chunk size.
-
-**Embedding**: A dense vector encoding semantic meaning. Similar meanings cluster together in high-dimensional space.
-
-**Vector database**: Storage optimized for approximate nearest neighbor (ANN) search over embeddings. Linear search doesn't scale past 10K chunks.
-
-**Semantic chunking**: Splitting based on meaning via embedding similarity rather than syntax. 10-100x slower than recursive splitting but higher quality for heterogeneous documents.
+- **Chunk**: The atomic retrieval unit in RAG. A contiguous text segment that must be meaningful in isolation.
+- **Chunk size**: Target length in tokens or characters. Typical range: 256-800 tokens. Smaller chunks increase precision at the cost of context.
+- **Chunk overlap**: Tokens shared between consecutive chunks to prevent information loss at boundaries. Typical: 10-20% of chunk size.
+- **Embedding**: A dense vector encoding semantic meaning. Similar meanings cluster together in high-dimensional space.
+- **Vector database**: Storage optimized for approximate nearest neighbor (ANN) search over embeddings. Linear search doesn't scale past 10K chunks.
+- **Semantic chunking**: Splitting based on meaning via embedding similarity rather than syntax. 10-100x slower than recursive splitting but higher quality for heterogeneous documents.
 
 ---
 
@@ -97,9 +92,6 @@ def clean_pdf_text(pdf_path: str) -> str:
     return text.strip()
 ```
 
-<details class="boz-resource">
-<summary>Advanced PDF preprocessing with ML-based parsing</summary>
-
 For production systems with heterogeneous PDFs, use ML-based document parsing:
 
 - **Docling** (IBM): ML-based document understanding, handles complex layouts
@@ -120,8 +112,6 @@ result = poller.result()
 markdown = result.content
 ```
 
-</details>
-
 ### Cleaning web scrapes
 
 Web pages have navigation, ads, and boilerplate that pollute chunks. Remove nav elements, cookie banners, footers, and ads before chunking.
@@ -134,8 +124,7 @@ def clean_web_page(url: str) -> str:
     return extract(downloaded, include_comments=False, include_tables=True)
 ```
 
-<details class="boz-resource">
-<summary>Manual BeautifulSoup cleaning pipeline</summary>
+**Manual alternative** using BeautifulSoup:
 
 ```python
 from bs4 import BeautifulSoup
@@ -153,8 +142,6 @@ def clean_web_page_manual(url: str) -> str:
     text = main.get_text(separator='\n', strip=True)
     return '\n\n'.join(line for line in text.split('\n') if line.strip())
 ```
-
-</details>
 
 ### Cleaning OCR output
 
@@ -424,8 +411,7 @@ metadata = {
 }
 ```
 
-<details class="boz-resource">
-<summary>Full metadata attachment example</summary>
+**Full metadata attachment example**:
 
 ```python
 chunks = splitter.split_text(document_text)
@@ -459,8 +445,6 @@ for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
     )
 ```
 
-</details>
-
 **Metadata enables**: filtered retrieval ("only legal-team PDFs"), recency boosting, attribution ("Source: hipaa_guide.pdf, Page 5"), access control via RBAC fields, deduplication via doc_hash.
 
 ### Contextual chunk headers (CCH)
@@ -486,8 +470,7 @@ def create_contextual_chunks(document: str, doc_title: str, chunk_size: int = 50
     return all_chunks
 ```
 
-<details class="boz-resource">
-<summary>Context header formats and full implementation</summary>
+**Context header formats**:
 
 **Minimal** (title only):
 ```
@@ -554,8 +537,6 @@ llm_context = [result.payload['original_text'] for result in query_results]
 # Abbreviated (20 tokens)
 "Doc: Nike Climate 2025 | Env Commitments\n\n"
 ```
-
-</details>
 
 **When to use**: Documents with clear hierarchy (reports, academic papers, legal docs), multi-document corpora, chunks that lack self-contained context. **When to skip**: Already self-contained documents (FAQs, product descriptions), single-document retrieval, or when simple chunking achieves acceptable quality.
 
@@ -753,9 +734,6 @@ class ProductionIndexer:
         return len(chunks)
 ```
 
-<details class="boz-resource">
-<summary>Batch indexing and multi-document type support</summary>
-
 **Batch indexing**:
 
 ```python
@@ -805,8 +783,6 @@ class MultiTypeIndexer(ProductionIndexer):
 
 Type-specific splitting prevents splitting mid-table (PDF), mid-function (code), or losing header context (markdown). Tag chunks with `doc_type` for type filtering at retrieval time.
 
-</details>
-
 Key additions over prototype: idempotency (doc_hash skips unchanged documents), change detection, metadata attachment, error handling, and logging.
 
 ### Incremental updates
@@ -848,9 +824,6 @@ Rebuild only when parameters change: chunk size, embedding model, or index algor
 ## Operations & planning
 
 RAG indexing has real costs — embedding API calls, storage, compute, and team time. These sections provide concrete numbers for budgeting, vendor selection, and staffing.
-
-<details class="boz-resource">
-<summary>Cost planning & budgeting</summary>
 
 ### Indexing costs
 
@@ -907,11 +880,6 @@ Query costs have three components, ranked by typical magnitude:
 
 **Verify current pricing**: [OpenAI Embeddings](https://platform.openai.com/docs/pricing), [Pinecone](https://www.pinecone.io/pricing/), [Qdrant](https://qdrant.tech/pricing/), [Weaviate](https://weaviate.io/pricing)
 
-</details>
-
-<details class="boz-resource">
-<summary>Build vs buy decision framework</summary>
-
 ### Comparison matrix
 
 | Factor | Self-Hosted (Qdrant/Milvus) | Managed SaaS (Pinecone/Weaviate Cloud) |
@@ -935,8 +903,6 @@ Query costs have three components, ranked by typical magnitude:
 | **pgvector** (PostgreSQL) | Teams already running Postgres, avoiding new infra | Included in Postgres hosting cost |
 | **ChromaDB** | Fast RAG prototyping, Python-native, embedded use | Free (open-source), cloud option emerging |
 | **FAISS In-Memory** | Benchmarking, research, <1M chunks | Server cost only |
-
-</details>
 
 ---
 
