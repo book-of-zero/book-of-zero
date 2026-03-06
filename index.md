@@ -29,8 +29,9 @@ Practical notes for building foundations in AI, Data, and engineering.
 
 - [System prompt]({% link _pages/docs/genai/system-prompt/page.md %})
 
-<!-- #### RAG
+#### RAG
 
 - [Indexing]({% link _pages/docs/genai/rag/indexing/page.md %})
+<!-- 
 - [Retrieval]({% link _pages/docs/genai/rag/retrieval/page.md %})
 - [Evaluation]({% link _pages/docs/genai/rag/evaluation/page.md %}) -->
