@@ -32,3 +32,4 @@ Practical notes for building foundations in AI, Data, and engineering.
 #### RAG
 
 - [Indexing]({% link _pages/docs/genai/rag/indexing/page.md %})
+- [Retrieval]({% link _pages/docs/genai/rag/retrieval/page.md %})
