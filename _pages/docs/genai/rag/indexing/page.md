@@ -25,6 +25,9 @@ Chunking is not preprocessing. It's architecture. A chunk is your retrieval unit
   - [Semantic chunking](#semantic-chunking)
   - [Agentic splitting](#agentic-splitting)
   - [Alternative representations](#alternative-representations)
+  - [Late chunking](#late-chunking)
+  - [Knowledge graph extraction (GraphRAG)](#knowledge-graph-extraction-graphrag)
+  - [Visual-native indexing (ColPali)](#visual-native-indexing-colpali)
 - [Embedding models](#embedding-models)
   - [Model selection](#model-selection)
   - [Fine-tuning embeddings](#fine-tuning-embeddings)
@@ -36,6 +39,7 @@ Chunking is not preprocessing. It's architecture. A chunk is your retrieval unit
 - [Vector storage](#vector-storage)
   - [In-memory vs persistent](#in-memory-vs-persistent)
   - [Index types](#index-types)
+  - [Quantization](#quantization)
   - [Production patterns](#production-patterns)
 - [Chunking evaluation](#chunking-evaluation)
   - [Intrinsic metrics](#intrinsic-metrics-chunk-quality)
@@ -361,6 +365,91 @@ for i, parent in enumerate(parent_chunks):
 
 The principle: your retrieval unit doesn't have to be a literal slice of the source document. If a derivative representation retrieves better, use it.
 
+### Late chunking
+
+Standard RAG embeds chunks independently, discarding document context. A chunk containing "it committed to net zero" has no idea "it" refers to the company named two sentences earlier. Late chunking solves this without adding LLM calls.
+
+**How it works**: instead of chunking first and embedding each chunk in isolation, pass the entire document through the embedding model's transformer layers first. Every token now carries the full document's contextual signal (via attention). Only then apply chunk boundaries and mean-pool each group of token vectors into a single chunk embedding.
+
+```python
+from transformers import AutoModel, AutoTokenizer
+import torch
+
+model_name = "jinaai/jina-embeddings-v3"
+tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+
+document = "Acme Corp was founded in 1998. It specializes in industrial robotics..."
+chunk_boundaries = [0, 512, 1024, 1536]  # token offsets
+
+inputs = tokenizer(document, return_tensors="pt", truncation=True, max_length=8192)
+with torch.no_grad():
+    token_embeddings = model(**inputs).last_hidden_state.squeeze(0)  # [seq_len, dim]
+
+chunk_embeddings = []
+for start, end in zip(chunk_boundaries, chunk_boundaries[1:] + [token_embeddings.size(0)]):
+    chunk_embeddings.append(token_embeddings[start:end].mean(dim=0))
+```
+
+**Comparison with CCH**: contextual chunk headers (CCH) add explicit context by prepending "Document: Acme Corp Report / Section: Financials" to each chunk before embedding — at the cost of LLM API calls to generate those headers. Late chunking adds implicit context by preserving cross-token attention — at zero LLM cost, using only the embedding model already in your pipeline.
+
+Both methods address the same root problem (context loss at chunk boundaries) and can be combined: embed with late chunking, then apply CCH-style prefixes for domain framing.
+
+**Constraints**: requires a long-context embedding model. `jina-embeddings-v3` processes up to 8 192 tokens (~5 000 words). A 50-page PDF won't fit in one pass — split into sections first, apply late chunking per section. For very long documents, standard chunking with CCH remains practical.
+
+**When to use**: documents with frequent anaphora or cross-sentence dependencies (transcripts, narrative reports, legal filings). **Skip when** your documents are already self-contained paragraphs (FAQ, product descriptions) or exceed your model's context window.
+
+### Knowledge graph extraction (GraphRAG)
+
+Standard dense retrieval finds chunks that are semantically similar to a query. It fails when the answer requires connecting facts across many documents — "what are the common risks across all acquisition targets?" has no single matching chunk. Knowledge graph indexing builds an explicit entity-relationship layer that enables these structural queries.
+
+**How indexing works**: for each text chunk, an LLM extracts named entities and the relationships between them. These become nodes and edges in a knowledge graph. Microsoft's GraphRAG then runs community detection (Leiden algorithm) over the graph and generates LLM summaries of each community — these summaries are stored as additional retrievable chunks.
+
+```text
+Indexing pipeline:
+  Documents → Chunks → Entity extraction (LLM) → Relationship extraction (LLM)
+           → Community detection → Community summaries (LLM) → Graph + vector store
+```
+
+This indexing is expensive: multiple LLM calls per chunk, plus summary generation. Expect $0.05–$2.00 per document depending on length and LLM price. Build the graph offline and treat it as a pre-computed artifact, not a real-time step.
+
+**FastGraphRAG variant**: replaces LLM-based entity extraction with NLP libraries (spaCy, NLTK) to extract noun phrases. Cheaper and faster, but misses implicit relationships and domain-specific entities that require reasoning.
+
+**When to use**: corpora where the answer requires traversing relationships (org charts, supply chains, investigative research). Standard vector RAG outperforms GraphRAG on factoid and lookup queries. For retrieval-side details — local vs global search, community summary retrieval, hybrid graph+dense queries — see [RAG Retrieval: GraphRAG]({{ site.baseurl }}/docs/genai/rag/retrieval/page/#graphrag).
+
+**Cost warning**: rebuilding a GraphRAG index is not incremental. Adding documents requires re-running community detection over the entire graph. Only adopt GraphRAG if your use case requires structural reasoning and you have budget for regular full rebuilds.
+
+### Visual-native indexing (ColPali)
+
+Standard PDF indexing relies on OCR → layout parsing → text chunking → embedding. This pipeline loses information: charts become broken text, tables become misaligned rows, visual diagrams are dropped entirely. ColPali eliminates the pipeline: it embeds raw page images directly.
+
+**How it works**: a vision-language model (PaliGemma-3B, or QWen2-VL for ColQwen) processes each page as an image and produces patch-level token embeddings — typically 256–1 024 patch vectors per page. At query time, a query text is encoded into token vectors and matched via late interaction (ColBERT-style max-similarity scoring across patches). No OCR, no chunking, no text extraction.
+
+```python
+from colpali_engine.models import ColPali, ColPaliProcessor
+import torch
+from pdf2image import convert_from_path
+
+model = ColPali.from_pretrained("vidore/colpali-v1.2", torch_dtype=torch.bfloat16).eval()
+processor = ColPaliProcessor.from_pretrained("vidore/colpali-v1.2")
+
+pages = convert_from_path("document.pdf")
+page_embeddings = []
+for page_image in pages:
+    inputs = processor.process_images([page_image])
+    with torch.no_grad():
+        page_embeddings.append(model(**inputs))  # [num_patches, dim] per page
+```
+
+**When ColPali outperforms text pipelines**: visually-rich documents where figures, charts, infographics, and layout carry meaning that OCR cannot preserve. Annual reports, scientific papers with dense plots, slide decks.
+
+**Constraints**:
+- Multi-vector storage: each page produces hundreds of vectors instead of one, significantly increasing index size and query cost. Vector databases need multi-vector support (Qdrant, Vespa).
+- GPU required at both index and query time — ColPali is not CPU-friendly.
+- Pure-text PDFs see no retrieval benefit over text-based pipelines and incur unnecessary storage overhead.
+
+**When to skip**: text-heavy documents (policy manuals, contracts, documentation) where OCR + recursive splitting already achieves >85% Hit Rate@5.
+
 ---
 
 ## Embedding models
@@ -627,20 +716,50 @@ Use in-memory for <1M chunks, single-machine, <10ms latency requirements. Use pe
 |-----------|-----------|---------|--------|-------------|
 | **HNSW** | 95-99% | <10ms | High (~1.5x vectors) | Default. Best recall/latency trade-off. |
 | **IVF** | 80-95% | <5ms | Low (1.5x vectors) | Memory-constrained. |
-| **PQ** (Product Quantization) | 70-90% | <2ms | Very low (0.1x vectors) | Billion-scale compression. |
-| **IVF+PQ** | 80-95% | <5ms | Low (0.2x vectors) | Billion-scale. Better recall than PQ alone. |
+| **IVF+SQ** | 90-97% | <5ms | Low (0.25x vectors) | Production default when memory is a constraint. |
+| **IVF+PQ** | 80-95% | <5ms | Low (0.03–0.1x vectors) | Billion-scale. Better recall than PQ alone. |
 | **Flat** (brute-force) | 100% | Linear in N | 1x vectors | <10K chunks. Ground truth for ablations. |
 
 HNSW is your default. Tune with `M=32, efConstruction=200, efSearch=50` for balanced performance (95% recall, <10ms). Increase for higher recall, decrease for speed.
 
 **Recall@10**: probability that the true top-10 nearest neighbors appear in the approximate top-10. When you're retrieving 50 and reranking to 5, recall matters less — optimize for latency.
 
+### Quantization
+
+Quantization compresses vector representations to reduce memory and speed up distance calculations. It is independent of the index algorithm — you can apply SQ or PQ on top of HNSW or IVF. Three methods are available in modern vector databases:
+
+**Scalar Quantization (SQ)**: maps each float32 component (4 bytes) to int8 (1 byte) — 4× memory reduction. Distance calculations on int8 values are faster and remain highly accurate. Recall loss is typically <2% compared to float32. This is the **production default** in Qdrant and Milvus when memory reduction is needed.
+
+```python
+from qdrant_client.models import ScalarQuantizationConfig, ScalarType, QuantizationConfig
+
+client.create_collection(
+    collection_name="documents",
+    vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+    quantization_config=QuantizationConfig(
+        scalar=ScalarQuantizationConfig(type=ScalarType.INT8, quantile=0.99, always_ram=True)
+    ),
+)
+```
+
+**Product Quantization (PQ)**: divides a vector into M sub-vectors, quantizes each sub-vector using a learned codebook of K centroids, and stores only the centroid index (1 byte per sub-vector). A 1536-dim float32 vector (6 KB) can compress to 96 bytes — 64× reduction. Recall loss is significant (~10–20%) and build time is slow (codebook training requires a representative sample of your corpus). Use only when RAM is the hard constraint at billion scale.
+
+**Binary Quantization (BQ)**: maps each float32 to a single bit (1/32 size). Recall loss is high for general embeddings but near-SQ for high-dimensional models trained with high-norm separation (e.g. OpenAI `text-embedding-3-large`, Cohere `embed-v3`). Qdrant-specific. 40× speedup for qualified models.
+
+| Method | Compression | Recall loss | Build speed | Best for |
+|--------|-------------|-------------|-------------|----------|
+| **SQ (int8)** | 4× | <2% | Fast | Default memory reduction |
+| **PQ** | 32–64× | 10–20% | Slow | Billion-scale, disk-constrained |
+| **BQ** | 32× | <5% (qualified models) | Fast | High-dim commercial embeddings |
+
+**Rule of thumb**: start with SQ. Only adopt PQ if SQ doesn't fit within your RAM budget and you've verified recall remains acceptable on your corpus.
+
 ### Production patterns
 
 1. **Build index offline**: Use a staging index, build fully, then hot-swap. Don't block queries during indexing.
 2. **Shard by metadata**: Split by time, domain, or access pattern. Search shards selectively.
 3. **Monitor recall**: Track both retrieval metrics (correct chunk in top-5?) and end-to-end metrics (LLM answered correctly?).
-4. **Quantize**: Float16 halves memory with <1% quality loss. Int8 gives 4x compression with 5-10% loss.
+4. **Quantize**: apply Scalar Quantization (int8) first — 4× memory reduction with <2% recall loss. See [Quantization](#quantization) for the SQ → PQ → BQ decision tree.
 
 ---
 
@@ -1002,7 +1121,7 @@ Query costs have three components, ranked by typical magnitude:
 
 **PDF structure matters.** Use layout-aware parsers (Docling, LlamaParse, Marker) that preserve tables and section boundaries.
 
-**Quantize embeddings in production.** Float16 halves storage with <1% quality loss.
+**Quantize embeddings in production.** Scalar Quantization (int8) is the default first step: 4× memory reduction with <2% recall loss. Only move to Product Quantization if SQ doesn't fit your RAM budget — PQ's 32–64× compression comes with 10–20% recall loss.
 
 **Reindex incrementally.** Full reindex only for parameter changes, not content updates.
 
