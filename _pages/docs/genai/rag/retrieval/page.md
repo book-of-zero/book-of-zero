@@ -48,10 +48,27 @@ Fast retrieval uses two-tower architectures and approximate nearest neighbor sea
   - [Pipeline vs agentic RAG](#pipeline-vs-agentic-rag)
   - [Key agentic patterns](#key-agentic-patterns)
 - [Beyond text: emerging retrieval paradigms](#beyond-text-emerging-retrieval-paradigms)
+  - [GraphRAG (Knowledge Graph Retrieval)](#graphrag-knowledge-graph-retrieval)
+  - [Multimodal retrieval](#multimodal-retrieval)
 - [Common pitfalls](#common-pitfalls)
 - [Production quality metrics & SLAs](#production-quality-metrics--slas)
+  - [Retrieval quality benchmarks](#retrieval-quality-benchmarks)
+  - [Synthetic test data & automated evaluation](#synthetic-test-data--automated-evaluation)
+  - [Latency SLAs](#latency-slas)
+  - [User satisfaction metrics](#user-satisfaction-metrics)
+  - [Monitoring dashboard](#monitoring-dashboard)
+  - [Quality vs cost trade-offs](#quality-vs-cost-trade-offs)
 - [Rollout & change management](#rollout--change-management)
+  - [Phased rollout strategy](#phased-rollout-strategy)
+  - [A/B testing framework](#ab-testing-framework)
+  - [Rollback plan](#rollback-plan)
+  - [Change management](#change-management)
 - [Operational risks & mitigation](#operational-risks--mitigation)
+  - [Infrastructure risks](#infrastructure-risks)
+  - [Quality risks](#quality-risks)
+  - [Security risks](#security-risks)
+  - [Cost risks](#cost-risks)
+  - [Business continuity](#business-continuity)
 - [Best practices](#best-practices)
 
 ---
@@ -68,10 +85,10 @@ Fast retrieval uses two-tower architectures and approximate nearest neighbor sea
 - **ColBERT**: Late interaction architecture encoding queries and documents as token-level embeddings (N tokens x 128-dim) with MaxSim scoring. Achieves 95-98% of cross-encoder accuracy at 10x lower latency.
 - **Matryoshka embeddings (MRL)**: Embedding models trained so that the first *d* dimensions form a valid lower-dimensional embedding. Truncate 3072-dim to 256-dim with minimal accuracy drop, making ANN search up to 12x cheaper. Supported by OpenAI v3, Nomic Embed v1.5, Jina v3, Cohere Embed v4.
 - **Self-querying**: Extracting structured metadata filters from natural language queries using an LLM or NER model. "Healthcare policies from 2023" → semantic query "policies" + filter {category: "healthcare", year: >= 2023}.
-- **Agentic retrieval**: Replacing fixed retrieval pipelines with an LLM agent that has retrieval as a tool. The agent decides when and how often to search, enabling iterative multi-hop retrieval at the cost of variable latency (1-30s vs predictable 200-500ms).
+- **Agentic retrieval**: Replacing fixed retrieval pipelines with an LLM agent that has retrieval as a tool. The agent decides when and how often to search, enabling iterative multi-hop retrieval at the cost of variable and higher latency.
 - **ANN (Approximate Nearest Neighbor)**: Algorithms (HNSW, IVF, PQ) that trade exact accuracy for sublinear search speed. Required past ~10K documents.
 - **RBAC (Role-Based Access Control)**: Security filtering that physically blocks unauthorized chunks at query time via metadata filters. Distinct from soft boosting which only adjusts scores.
-- **Semantic caching**: Caching retrieval results by query similarity (cosine >= 0.90-0.95) rather than exact string match. Achieves 40-70% hit rates in FAQ/support systems.
+- **Semantic caching**: Caching retrieval results by query similarity (cosine >= 0.90-0.95) rather than exact string match. Achieves significantly higher hit rates than exact-match caching, especially in FAQ/support systems.
 
 ---
 
@@ -89,7 +106,7 @@ Classify queries into predefined intents, each mapped to a backend:
 | **Real-time data** | External API | "What's the weather?", "AAPL stock price" |
 | **Out of scope** | Direct response (apologize) | "Tell me a joke", "Write code for me" |
 
-Three approaches to intent classification: rule-based (keyword matching, <1ms, for <10 intents), ML-based (embed queries + train classifier, for 10+ intents), and semantic similarity (few-shot matching against intent exemplars, no training needed).
+Four approaches to intent classification: rule-based (keyword matching, <1ms, for <10 intents), ML-based (embed queries + train classifier, for 10+ intents), semantic similarity (few-shot matching against intent exemplars, no training needed), and LLM-based (structured output from an LLM call, most flexible but slowest at 200-1000ms).
 
 ```python
 from sentence_transformers import SentenceTransformer, util
@@ -144,7 +161,7 @@ def classify_intent_simple(query: str) -> IntentType:
 
 ```python
 from sentence_transformers import SentenceTransformer
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 
 training_data = [
     ("Hi", "greeting"), ("How do I reset my password?", "knowledge_base"),
@@ -158,7 +175,7 @@ queries, intents = zip(*training_data)
 model = SentenceTransformer('all-MiniLM-L6-v2')
 query_embeddings = model.encode(queries)
 
-classifier = RandomForestClassifier(n_estimators=100, random_state=42)
+classifier = LogisticRegression(max_iter=1000)
 classifier.fit(query_embeddings, intents)
 
 def classify_intent_ml(query: str) -> str:
@@ -186,7 +203,7 @@ def route_query(query: str, user_id: str) -> dict:
 
 **Multi-step routing** for complex queries needing multiple backends (e.g., "Show my recent orders and recommend similar products"): use an LLM to decompose the query into steps, classify and route each step independently, then combine results.
 
-**When routing matters**: Multi-backend systems (RAG + SQL + APIs), customer support chatbots, enterprise assistants. Less important for single-backend systems or specialized tools. Cost: 5-20ms latency (semantic) or <1ms (rule-based) to avoid 30-60% of useless retrievals.
+**When routing matters**: Multi-backend systems (RAG + SQL + APIs), customer support chatbots, enterprise assistants. Less important for single-backend systems or specialized tools. Cost: 5-20ms latency with local embeddings (semantic), 50-200ms with API-based embeddings, or <1ms (rule-based) — routing avoids up to 30-60% of unnecessary retrievals.
 
 ---
 
@@ -222,7 +239,7 @@ model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
 # Index time: encode all documents once
 doc_embeddings = model.encode(documents, convert_to_numpy=True)
-index = faiss.IndexHNSWFlat(doc_embeddings.shape[1], 32)
+index = faiss.IndexHNSWFlat(doc_embeddings.shape[1], 32)  # L2 default; equivalent to cosine on normalized vectors
 index.add(doc_embeddings)
 
 # Search time: encode query, find nearest neighbors
@@ -306,7 +323,7 @@ scores = bm25.get_scores("HIPAA compliance requirements".lower().split())
 top_indices = np.argsort(scores)[::-1][:50]
 ```
 
-**How BM25 works**: TF rewards more term occurrences with saturation (10th occurrence adds less than 1st). IDF weights rare terms higher ("HIPAA" beats "the"). Document length normalization prevents unfair penalization of long documents. Key parameters: k1 (term saturation, default 1.5) and b (length normalization, default 0.75).
+**How BM25 works**: TF rewards more term occurrences with saturation (10th occurrence adds less than 1st). IDF weights rare terms higher ("HIPAA" beats "the"). Document length normalization prevents unfair penalization of long documents. Key parameters: k1 (term saturation, default 1.2) and b (length normalization, default 0.75).
 
 **When BM25 works**: Exact keyword matches, named entities, acronyms. **When BM25 fails**: Semantic paraphrases.
 
@@ -327,7 +344,7 @@ SPLADE solves the vocabulary mismatch problem that plagues BM25 — a query abou
 | **BM25** | 18.7% | Very high | <5ms |
 | **SPLADE** (original) | 32.8% | Medium | 30-50ms |
 | **SPLADEv2** | 36.8% | High | 30-45ms |
-| **SPLADE++ (EnsembleDistil)** | 38.0% | High | 30-45ms |
+| **SPLADE++ (EnsembleDistil)** | 38.3% | High | 30-45ms |
 | **SPLADE-v3** | 40.2% | High | 30-45ms |
 
 ```python
@@ -382,9 +399,9 @@ def hybrid_search(
 
 Precompute `doc_embeddings` once at index time. Search-time work should encode only the query, score against stored vectors, and fuse with sparse scores.
 
-**Tuning alpha**: alpha=1.0 pure dense, alpha=0.0 pure sparse, alpha=0.5 balanced default, alpha=0.7 favor semantic (conversational), alpha=0.3 favor keywords (technical/entity search). Hybrid typically improves Hit Rate@10 by 5-15% over single-method.
+**Tuning alpha**: alpha=1.0 pure dense, alpha=0.0 pure sparse, alpha=0.5 balanced default, alpha=0.7 favor semantic (conversational), alpha=0.3 favor keywords (technical/entity search). Hybrid typically improves Hit Rate@10 by 5-15% over single-method, depending on dataset and metric.
 
-**Alternative: Reciprocal Rank Fusion (RRF)** merges ranked lists without score normalization: `score(doc) = sum(1 / (k + rank))` with k=60. More robust than score combination but less tunable. Use RRF when you don't have time to tune alpha.
+**Alternative: Reciprocal Rank Fusion (RRF)** merges ranked lists without score normalization: `score(doc) = sum(1 / (k + rank))` where rank starts at 1 and k=60. More robust than score combination but less tunable. Use RRF when you don't have time to tune alpha.
 
 ```python
 def reciprocal_rank_fusion(dense_ranks: list[int], sparse_ranks: list[int], k: int = 60):
@@ -409,7 +426,7 @@ Unlike two-tower (separate encoders), cross-encoders jointly encode query and do
 ```python
 from sentence_transformers import CrossEncoder
 
-reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
 
 # Stage 1: Get 50 candidates
 candidates = hybrid_search(query, documents, k=50)
@@ -421,11 +438,11 @@ rerank_scores = reranker.predict(pairs)
 top_5_docs = [candidate_docs[i] for i in np.argsort(rerank_scores)[::-1][:5]]
 ```
 
-**Models**: ms-marco-MiniLM-L-6-v2 (fast, 6 layers, default), ms-marco-MiniLM-L-12-v2 (better quality, 2x slower), mmarco-mMiniLMv2-L12-H384-v1 (multilingual, 100+ languages).
+**Models**: ms-marco-MiniLM-L6-v2 (fast, 6 layers, default), ms-marco-MiniLM-L12-v2 (better quality, 2x slower), mmarco-mMiniLMv2-L12-H384-v1 (multilingual, 14 languages).
 
-**When reranking matters**: Stage 1 has high recall but low precision (correct chunk in top 50 but ranked 20th), or queries require nuanced understanding ("compare X and Y"). Typically improves MRR by 10-20%. **Skip reranking** when latency budget is <100ms total or stage 1 already achieves >95% Hit Rate@5.
+**When reranking matters**: Stage 1 has high recall but low precision (correct chunk in top 50 but ranked 20th), or queries require nuanced understanding ("compare X and Y"). Typically yields a meaningful MRR improvement, especially when stage 1 recall is high but precision is low. **Skip reranking** when latency budget is very tight or stage 1 already achieves high Hit Rate@5.
 
-**Latency**: Cross-encoder latency depends heavily on model size and candidate count. With ms-marco-MiniLM-L-6-v2 reranking 50 candidates: 30-50ms. With larger models or 500 candidates: 50-500ms. Budget accordingly — a two-stage pipeline with a small cross-encoder reranking 50 candidates typically runs at 60-100ms total (stage 1 + stage 2).
+**Latency**: Cross-encoder latency scales with model size and candidate count. A small cross-encoder (MiniLM-L6) reranking 50 candidates on GPU runs in tens of milliseconds; larger models or hundreds of candidates can push into hundreds of milliseconds. Budget accordingly — a two-stage pipeline with a small cross-encoder reranking 50 candidates typically adds minimal overhead on top of stage 1.
 
 ### ColBERT (Late Interaction)
 
@@ -437,11 +454,11 @@ ColBERT:    Query → [N × 128-dim vectors],  Doc → [M × 128-dim vectors]
             Similarity = Σ max(cos(Qi, Dj)) for all query tokens Qi
 ```
 
-| Architecture | Candidates | Latency | MRR@10 | Storage |
-|--------------|------------|---------|---------|---------|
-| **Bi-encoder** | 1M | 1-5ms | 35-37% | 1x (768-dim/doc) |
-| **ColBERT** | 100-1000 | 10-50ms | 40.8% | 6-10x (128-dim/token) |
-| **Cross-encoder** | 10-50 | 50-500ms (model & k dependent) | 42-44% | Model params only |
+| Architecture | Candidates | Relative latency | MRR@10 | Storage |
+|--------------|------------|------------------|---------|---------|
+| **Bi-encoder** | 1M | Fastest | 35-37% | 1x (768-dim/doc) |
+| **ColBERT** | 100-1000 | ~10x bi-encoder | 39.7% | 6-10x (128-dim/token) |
+| **Cross-encoder** | 10-50 | ~100x bi-encoder (model & k dependent) | 42-44% | Model params only |
 
 ```python
 from ragatouille import RAGPretrainedModel
@@ -456,21 +473,21 @@ stage3_results = cross_encoder.rerank(query, stage2_results, k=5)
 
 **Use ColBERT** when reranking 100-1000 candidates where cross-encoder is too slow. **Skip ColBERT** for <100 candidates (cross-encoder is fast enough) or when 6-10x storage overhead is unacceptable.
 
-**Compression**: PLAID (centroid IDs + residuals, 2-3x smaller) and WARP (weighted aggregation, 2x smaller) reduce storage with <1% accuracy loss.
+**Compression**: ColBERTv2 uses centroid-based residual compression (6-10x smaller than v1). PLAID accelerates retrieval via centroid interaction and pruning (2.5-6.8x speedup, <1% accuracy loss). WARP further reduces index size 2-4x over PLAID via implicit decompression and dynamic similarity imputation.
 
 ### LLM-based rerankers
 
 Cross-encoders use BERT-scale models (110M-340M parameters). LLM-based rerankers use larger language models for higher accuracy at the cost of latency and compute.
 
-| Reranker | Approach | NDCG@10 (BEIR avg) | Latency (50 docs) | Cost |
-|----------|----------|-------------------|-------------------|------|
-| **ms-marco-MiniLM-L-6-v2** | Cross-encoder (22M) | ~49% | 30-50ms | Self-hosted |
-| **BGE Reranker v2-m3** | Cross-encoder (0.6B) | ~66% | 50-100ms | Self-hosted |
-| **Cohere Rerank 3.5** | Purpose-built (API) | ~56% | ~400ms | ~$2/1K searches |
-| **RankLLaMA-13B** | Fine-tuned LLaMA | ~59% (DL19) | 200-500ms | Self-hosted (GPU) |
-| **RankGPT (GPT-4o)** | Listwise via LLM | ~75% (DL19) | 1-3s | API cost (high) |
+| Reranker | Approach | NDCG@10 | Cost |
+|----------|----------|---------|------|
+| **ms-marco-MiniLM-L6-v2** | Cross-encoder (22M) | ~49% (BEIR avg) | Self-hosted |
+| **BGE Reranker v2-m3** | Cross-encoder (0.6B) | ~66% (BEIR avg) | Self-hosted |
+| **Cohere Rerank 3.5** | Purpose-built (API) | ~56% (BEIR avg) | API (pay-per-search) |
+| **RankLLaMA-13B** | Fine-tuned LLaMA | ~76% (DL19) | Self-hosted (GPU) |
+| **RankGPT (GPT-4)** | Listwise via LLM | ~75% (DL19) | API (high) |
 
-**How they differ**: Cross-encoders (MiniLM, BGE) score each query-document pair independently (pointwise) and are purpose-built for relevance scoring — up to 60x cheaper and 48x faster than general-purpose LLM rerankers. RankLLaMA fine-tunes a 13B LLM for pointwise scoring. RankGPT passes all candidates to GPT-4 and asks it to rank them as a list (listwise), achieving the highest accuracy but at significant cost.
+**How they differ**: Cross-encoders (MiniLM, BGE) score each query-document pair independently (pointwise) and are purpose-built for relevance scoring — significantly cheaper and faster than general-purpose LLM rerankers. RankLLaMA fine-tunes a 13B LLM for pointwise scoring. RankGPT passes all candidates to GPT-4 and asks it to rank them as a list (listwise), achieving the highest accuracy but at significant cost.
 
 **When to use LLM-based rerankers**: High-stakes domains (legal, medical, compliance) where accuracy improvement justifies the latency and cost. For most production systems, purpose-built rerankers (BGE, Cohere) offer the best price-performance ratio. **When to use RankGPT/RankLLaMA**: Research, low-volume high-stakes applications, or when cross-encoder accuracy is insufficient. **When to skip entirely**: Latency budget <100ms or cost-sensitive workloads.
 
@@ -484,7 +501,7 @@ Vector indexes are built during indexing (see [RAG Indexing Vector Storage]({{ s
 index = faiss.read_index("index.faiss")
 index.hnsw.efSearch = 50  # Default 16, increase for better recall
 
-# efSearch=16: 90% recall, <5ms | efSearch=50: 95% recall, <10ms | efSearch=100: 98% recall, <20ms
+# Higher efSearch = better recall + higher latency (exact numbers depend on dataset, dimensions, and hardware)
 ```
 
 Set efSearch=100 when high stage 1 recall is critical (missing the correct chunk means it won't be reranked). Set efSearch=20 when latency is tight and you're reranking 100+ candidates to compensate.
@@ -505,7 +522,7 @@ results = client.search(
     query_vector=query_embedding.tolist(),
     query_filter=Filter(must=[
         FieldCondition(key="category", match=MatchValue(value="healthcare")),
-        FieldCondition(key="created_at", range={"gte": "2024-01-01"}),
+        FieldCondition(key="created_at", range=DatetimeRange(gte="2024-01-01T00:00:00Z")),
     ]),
     limit=50,
 )
@@ -539,16 +556,16 @@ def secure_retrieval(query: str, user_token: str, k: int = 10):
 
 **Business value**:
 
-| Item | Amount |
-|------|--------|
-| Implementation cost | $50K-$150K (identity integration, metadata audit, monitoring) |
-| Annual operational cost | $10K-$30K |
-| Value protected: breach prevention | $2M-$5M+ (average breach cost avoided) |
-| Value protected: compliance | $100K-$20M (HIPAA/GDPR penalties avoided) |
-| Payback period | <6 months for regulated industries |
+| Item | Relative cost |
+|------|---------------|
+| Implementation cost | Moderate (identity integration, metadata audit, monitoring) |
+| Annual operational cost | Low (ongoing sync, monitoring, audits) |
+| Value protected: breach prevention | High (average breach costs are multiples of implementation cost) |
+| Value protected: compliance | Very high (HIPAA/GDPR penalties can reach millions) |
+| Payback period | Typically under 6 months for regulated industries |
 
 **Concrete scenarios**:
-- **Healthcare (HIPAA)**: Cardiologist blocked from psychiatry records. Violation = $100-$1.5M penalty + criminal charges.
+- **Healthcare (HIPAA)**: Cardiologist blocked from psychiatry records. Civil penalties scale by violation tier; knowing violations can trigger criminal prosecution.
 - **Multi-tenant SaaS**: Customer A must never see Customer B's data. Leakage = 100% churn + lawsuit.
 - **Legal**: Attorney on Case A blocked from Case B discovery documents (conflict walls). Violation = malpractice + disbarment.
 - **HR (GDPR)**: US HR admin blocked from EU employee compensation data. Violation = up to 4% global revenue.
@@ -595,10 +612,10 @@ def secure_retrieval_with_audit(query: str, user_token: str, k: int = 10):
 - High blocking rate (80%+ consistently — user needs additional permissions)
 
 **Compliance evidence requirements**:
-- **SOC 2 Type II**: 12-month access control enforcement metrics
-- **HIPAA § 164.308(a)(4)**: Audit logs with user ID, timestamp, PHI accessed, authorization basis
-- **GDPR Article 30**: Records of data processing activities including access controls
-- **ISO 27001 A.9.1**: Policy document + technical implementation + enforcement audit logs
+- **SOC 2 Type II**: Access control enforcement metrics over an observation period (typically 12 months, minimum 3-6 months for first audits)
+- **HIPAA § 164.312(b)**: Audit controls — hardware, software, and procedural mechanisms to record and examine access to ePHI
+- **GDPR Article 30**: Records of processing activities including a general description of technical and organisational security measures
+- **ISO 27001 A.5.15** (2022; formerly A.9.1): Access control policy based on business and security requirements + implementation evidence
 
 **Technical trade-offs**: +5-15ms latency, +5-10% storage for RBAC metadata. Always validate JWT signatures and expiration. Sync permissions regularly between IdP and vector DB or use short-lived tokens (1-hour TTL).
 
@@ -646,13 +663,10 @@ Introduction and conclusion sections often contain key concepts and summaries. B
 # After retrieval, reorder chunks for LLM input:
 def reorder_for_llm(chunks: list[dict]) -> list[dict]:
     """Place most relevant chunks at start and end, least relevant in middle."""
-    reordered = []
-    for i, chunk in enumerate(chunks):
-        if i % 2 == 0:
-            reordered.insert(i // 2, chunk)
-        else:
-            reordered.append(chunk)
-    return reordered
+    # Even-indexed chunks go to the front, odd-indexed go to the back (reversed)
+    front = chunks[::2]
+    back = chunks[1::2][::-1]
+    return front + back
 ```
 
 ```python
@@ -685,7 +699,7 @@ SECTION_WEIGHTS = {
 }
 ```
 
-Helps for structured documents (papers, reports, technical docs). Hurts for unstructured content (chat logs, transcripts) or queries seeking specific details in middle sections. Store positional metadata during indexing. Combine with reranking: apply positional boosts before cross-encoder, not after.
+Helps for structured documents (papers, reports, technical docs). Hurts for unstructured content (chat logs, transcripts) or queries seeking specific details in middle sections. Store positional metadata during indexing. Combine with reranking: apply positional reordering after cross-encoder, not before — let the reranker score on pure relevance first.
 
 ---
 
@@ -726,9 +740,9 @@ Standalone query:"""
     return llm.invoke(prompt).content.strip()
 ```
 
-**Detecting when rewriting is needed**: Check for pronouns and contextual references (it, its, this, that, also, instead). Skip rewriting for standalone queries to save 100-300ms.
+**Detecting when rewriting is needed**: Check for pronouns and contextual references (it, its, this, that, also, instead). Skip rewriting for standalone queries to avoid unnecessary LLM calls. Simple regex works as a first pass but produces false positives — "What is the `this` keyword?" or "What is the difference between X and Y?" would trigger unnecessarily. Treat it as a cheap gate, not a precise classifier.
 
-**Latency optimization**: Use a smaller model (GPT-3.5, Claude Haiku: 50-100ms vs 300ms), cache rewritten queries by (query + history hash), or fine-tune T5-small for 10-20ms rewrites at 90-95% of GPT-4 quality.
+**Latency optimization**: Use a smaller, faster model for rewriting (an order of magnitude faster than large models), cache rewritten queries by (query + history hash), or fine-tune a small seq2seq model (e.g., T5-small) for significantly faster rewrites with competitive quality on narrow rewriting tasks.
 
 ```python
 import hashlib, json, re
@@ -737,8 +751,7 @@ def needs_rewriting(query: str) -> bool:
     patterns = [
         r'\b(it|its|this|that|these|those|they|them|their)\b',
         r'\b(also|too|as well|additionally|furthermore)\b',
-        r'\b(instead|however|but|although)\b',
-        r'\b(the same|similar|different|compared)\b',
+        r'\b(instead|however)\b',
     ]
     return any(re.search(p, query, re.IGNORECASE) for p in patterns)
 
@@ -754,7 +767,7 @@ def rewrite_with_cache(query: str, chat_history: list[dict], cache: dict) -> str
     return rewritten
 ```
 
-**Fine-tuned rewriting model** (10-20ms vs 100-300ms for GPT-4):
+**Fine-tuned rewriting model** (orders of magnitude faster than LLM-based rewriting):
 
 ```python
 from transformers import T5ForConditionalGeneration, T5Tokenizer
@@ -785,13 +798,14 @@ def decompose_query(query: str) -> list[str]:
 # 2. What are GDPR's privacy requirements?
 # 3. How do they differ for healthcare data?
 
-all_results = []
+all_results = {}
 for sub_q in decompose_query(query):
-    all_results.extend(hybrid_search(sub_q, documents, k=20))
-top_chunks = rerank(query, list(set(all_results)), k=5)
+    for doc_id, score in retrieve(sub_q, documents, k=20):
+        all_results[doc_id] = max(all_results.get(doc_id, 0), score)
+top_chunks = rerank(query, list(all_results.keys()), k=5)
 ```
 
-Helps for multi-hop questions ("compare X and Y"). Hurts for simple queries where decomposition adds 200-500ms overhead.
+Helps for multi-hop questions ("compare X and Y"). Hurts for simple queries where decomposition adds significant overhead (LLM call for decomposition + multiple retrieval rounds).
 
 ### Self-querying (natural language to metadata filters)
 
@@ -800,8 +814,8 @@ When a user asks "Show me healthcare policies from 2023", running semantic searc
 ```
 User query: "healthcare policies from 2023"
     ↓ LLM extraction
-Semantic query: "policies"
-Metadata filters: {category: "healthcare", year: >= 2023}
+Semantic query: "healthcare policies"
+Metadata filters: {year: >= 2023}
     ↓
 Vector search with pre-filters applied
 ```
@@ -824,14 +838,14 @@ retriever = SelfQueryRetriever.from_llm(
 )
 
 # "healthcare policies from 2023" →
-#   query="policies", filter=AND(eq("category","healthcare"), gte("year",2023))
+#   query="healthcare policies", filter=gte("year",2023)
 ```
 
 The LLM receives a structured prompt describing available metadata fields (names, types, descriptions) and outputs a structured query with a semantic text component and filter expressions. LangChain's `SelfQueryRetriever` and LlamaIndex's `VectorIndexAutoRetriever` both implement this pattern.
 
-**Lightweight alternatives**: For predictable metadata patterns, skip the LLM call entirely. Use regex or NER models to extract dates, categories, and named entities — 1-5ms vs 100-500ms for an LLM call. Reserve LLM-based extraction for open-ended metadata schemas or complex filter logic (nested AND/OR conditions).
+**Lightweight alternatives**: For predictable metadata patterns, skip the LLM call entirely. Use regex or NER models to extract dates, categories, and named entities — orders of magnitude faster than an LLM call. Reserve LLM-based extraction for open-ended metadata schemas or complex filter logic (nested AND/OR conditions).
 
-**When self-querying helps**: Queries with explicit constraints (dates, categories, authors, document types) that map to indexed metadata fields. **When to skip**: Purely semantic queries without metadata constraints, or when metadata fields are sparse/unreliable. **Latency**: 100-500ms for LLM-based, 1-5ms for regex/NER-based extraction.
+**When self-querying helps**: Queries with explicit constraints (dates, categories, authors, document types) that map to indexed metadata fields. **When to skip**: Purely semantic queries without metadata constraints, or when metadata fields are sparse/unreliable.
 
 ### Advanced query techniques
 
@@ -849,7 +863,7 @@ def hyde_retrieval(query: str, documents: list[str], k: int = 5):
     return [documents[i] for i in np.argsort(similarities)[::-1][:k]]
 ```
 
-Helps for complex queries with large semantic gaps between query and document vocabulary. Hurts when the hypothetical answer is wrong (leads retrieval astray) or for simple queries. Adds 1-3s LLM latency. Optimization: average 3-5 hypothetical answer embeddings for robustness.
+Helps for complex queries with large semantic gaps between query and document vocabulary. Hurts when the hypothetical answer is wrong (leads retrieval astray) or for simple queries. Adds a full LLM generation round-trip. Optimization: average 3-5 hypothetical answer embeddings for robustness.
 
 #### Multi-Query
 
@@ -861,20 +875,22 @@ def multi_query_retrieval(query: str, documents: list[str], k: int = 5):
         f"Generate 3 different versions of: {query}"
     ).content.split("\n")[:3]
 
+    doc_embeddings = model.encode(documents)
     scores = {}
     for q in [query] + variations:
-        ranked = np.argsort(np.dot(model.encode(documents), model.encode(q)))[::-1][:50]
-        for rank, doc_id in enumerate(ranked):
-            scores[doc_id] = scores.get(doc_id, 0) + 1 / (60 + rank + 1)
+        sims = np.dot(doc_embeddings, model.encode(q))
+        ranked = np.argsort(sims)[::-1][:50]
+        for rank, idx in enumerate(ranked):
+            scores[idx] = scores.get(idx, 0) + 1 / (60 + rank + 1)
 
     return [documents[i] for i in sorted(scores, key=scores.get, reverse=True)[:k]]
 ```
 
-Helps for ambiguous queries and domain-specific terminology variation. Adds 1-2s LLM latency + multiple retrievals.
+Helps for ambiguous queries and domain-specific terminology variation. Adds one LLM call + multiple retrieval rounds.
 
 #### Step-back prompting
 
-Generate a more general query to retrieve foundational context alongside specific details.
+Generate a more general query to retrieve foundational context alongside specific details. Originally proposed for reasoning tasks (Zheng et al., 2023, Google DeepMind), adapted for retrieval by practitioners and frameworks like LangChain.
 
 ```python
 def step_back_retrieval(query: str, documents: list[str], k: int = 10):
@@ -882,13 +898,19 @@ def step_back_retrieval(query: str, documents: list[str], k: int = 10):
         f'Generate a more general question for: "{query}"'
     ).content.strip()
 
-    specific = hybrid_search(query, documents, k=k)
-    general = hybrid_search(step_back_query, documents, k=k)
-    combined = specific[:int(k * 0.7)] + general[:int(k * 0.3)]
-    return rerank(query, list({doc['chunk_id']: doc for doc in combined}.values()), k=k)
+    specific = retrieve(query, documents, k=k)
+    general = retrieve(step_back_query, documents, k=k)
+    n_specific = k - k // 3
+    seen = set()
+    combined = []
+    for doc_id, score in specific[:n_specific] + general[:k - n_specific]:
+        if doc_id not in seen:
+            seen.add(doc_id)
+            combined.append(doc_id)
+    return rerank(query, combined, k=k)
 ```
 
-Helps for complex domain questions requiring background context. Hurts for simple factual queries. Adds 500ms-1s LLM latency.
+Helps for complex domain questions requiring background context. Hurts for simple factual queries. Adds one extra LLM call for the step-back generation.
 
 ---
 
@@ -922,13 +944,13 @@ def mmr_rerank(query: str, candidates: list[str], k: int = 5, lambda_param: floa
     return [candidates[i] for i in selected]
 ```
 
-**Tuning lambda**: 0.7-0.9 favor relevance (precision search), 0.5 balanced default, 0.3-0.5 favor diversity (exploratory/multi-faceted queries). Apply MMR after reranking (100 → 50 with cross-encoder, then MMR 50 → 5). Computational cost scales O(k^2).
+**Tuning lambda**: 0.7-0.9 favor relevance (precision search), 0.5 balanced default, 0.3-0.5 favor diversity (exploratory/multi-faceted queries). Apply MMR after reranking (100 → 50 with cross-encoder, then MMR 50 → 5). Computational cost scales O(k × n) where n is the candidate pool size.
 
 ### Contextual compression
 
 Not every sentence in a chunk is relevant. Compression filters chunks to keep only query-relevant content.
 
-**Embedding-based filtering** (fast, 10-50ms): re-embed sentences, keep those above similarity threshold.
+**Embedding-based filtering** (fast, sub-second on GPU): re-embed sentences, keep those above similarity threshold.
 
 ```python
 def embedding_compress(query: str, chunks: list[str], threshold: float = 0.5) -> list[str]:
@@ -942,7 +964,7 @@ def embedding_compress(query: str, chunks: list[str], threshold: float = 0.5) ->
     return compressed
 ```
 
-**LLM-based extraction** (high quality, 100-500ms/chunk): prompt LLM to extract relevant sentences verbatim. 4-15x compression but expensive at scale.
+**LLM-based extraction** (high quality, one LLM call per chunk): prompt LLM to extract relevant sentences verbatim. Typically ~2-5x compression but expensive at scale.
 
 ```python
 def llm_compress(query: str, chunks: list[str]) -> list[str]:
@@ -970,15 +992,15 @@ def pipeline_compress(query: str, chunks: list[str], redundancy_threshold: float
     return [s for s, score in zip(unique_sents, scores) if score >= relevance_threshold]
 ```
 
-**Threshold tuning**: 0.3 permissive (2x compression), 0.5 balanced (3-4x), 0.7 aggressive (5-10x, risks removing important context). Apply after reranking, not before. Start with embedding-based; use LLM-based only when precision is critical.
+**Threshold tuning**: 0.3 permissive (retains most content), 0.5 balanced default, 0.7 aggressive (risks removing important context). Exact compression ratios vary significantly by model, domain, and query distribution. Prefer applying after reranking to avoid losing relevant content before scoring. Start with embedding-based; use LLM-based only when precision is critical.
 
 ### Parent-child retrieval
 
 Small chunks match queries precisely but lack context. Large chunks provide context but match poorly. Parent-child retrieval solves this: retrieve based on small chunks, return large chunks to the LLM.
 
-**Sentence window retrieval**: Embed individual sentences. When retrieved, expand to +/-N surrounding sentences (default N=5, yielding 11 sentences). Simple, works for linear documents.
+**Sentence window retrieval**: Embed individual sentences. When retrieved, expand to +/-N surrounding sentences (default N=3, yielding 7 sentences). Simple, works for linear documents.
 
-**Auto-merging retrieval**: Build a hierarchical tree (parent 2048 tokens → intermediate 512 → leaf 128). Retrieve leaf nodes; if 60%+ of a parent's children are retrieved, return the parent instead. Better for structured documents.
+**Auto-merging retrieval**: Build a hierarchical tree (parent 2048 tokens → intermediate 512 → leaf 128). Retrieve leaf nodes; if 50%+ of a parent's children are retrieved, return the parent instead. Better for structured documents.
 
 | Aspect | Sentence Window | Auto-Merging |
 |--------|-----------------|--------------|
@@ -992,7 +1014,7 @@ Small chunks match queries precisely but lack context. Large chunks provide cont
 
 ```python
 class SentenceWindowRetriever:
-    def __init__(self, documents: list[str], window_size: int = 5):
+    def __init__(self, documents: list[str], window_size: int = 3):
         self.window_size = window_size
         self.sentences, self.metadata = [], []
         for doc_idx, doc in enumerate(documents):
@@ -1027,7 +1049,7 @@ class HierarchicalNode:
     parent_id: Optional[str]
     children_ids: List[str]
 
-def auto_merge_retrieve(query: str, nodes: dict, k: int = 12, merge_threshold: float = 0.6):
+def auto_merge_retrieve(query: str, nodes: dict, k: int = 12, merge_threshold: float = 0.5):
     leaf_nodes = [n for n in nodes.values() if n.level == 2]
     leaf_embs = model.encode([n.text for n in leaf_nodes])
     top_leaves = [leaf_nodes[i] for i in np.argsort(np.dot(leaf_embs, model.encode(query)))[::-1][:k]]
@@ -1046,7 +1068,7 @@ def auto_merge_retrieve(query: str, nodes: dict, k: int = 12, merge_threshold: f
     return final
 ```
 
-**Tuning**: Window size 3 gives significant improvement with reasonable tokens; 5 is a safe default; >5 has diminishing returns. Merge threshold 0.5 aggressive, 0.6 balanced, 0.7-0.8 conservative. Always apply reranking after expansion to filter the best expanded contexts.
+**Tuning**: Window size 3 is the recommended default (LlamaIndex default; benchmarks show groundedness can drop at larger sizes as context overwhelms the LLM). Merge threshold 0.5 is the default (LlamaIndex); 0.3-0.4 aggressive, 0.6-0.7 conservative. Always apply reranking after expansion to filter the best expanded contexts.
 
 ### Document-level vs chunk-level retrieval
 
@@ -1070,7 +1092,7 @@ retriever = ParentDocumentRetriever(
 | **Context** | Low | High | High (parent chunks) |
 | **Token Cost** | Low | High | Medium-High |
 
-**Sizing rule**: <4K tokens → no chunking, 4K-10K → parent document retrieval, >10K → standard chunking. Route summarization queries to document-level, specific questions to chunk-level.
+**Rough heuristic**: very short documents that fit in context may not need chunking; mid-length documents benefit from parent document retrieval; long documents need standard chunking. Route summarization queries to document-level, specific questions to chunk-level.
 
 ### Context enrichment
 
@@ -1083,14 +1105,15 @@ def retrieve_with_metadata(query: str, k: int = 5):
     for i, r in enumerate(results):
         m = r.payload
         context.append(f"[Source {i+1}] {m.get('source','?')} (p.{m.get('page_number','?')}, {m.get('created_at','?')})\n{r.payload['text']}")
-    return f"Answer using only these sources. Cite by number.\n\n{''.join(context)}\n\nQuestion: {query}"
+    separator = "\n\n"
+    return f"Answer using only these sources. Cite by number.\n\n{separator.join(context)}\n\nQuestion: {query}"
 ```
 
 ---
 
 ## Semantic caching
 
-Caching retrieval results by query similarity rather than exact string match is a major architectural optimization. **Semantic caching** compares new queries against cached query embeddings (cosine >= 0.90-0.95), handling paraphrased queries and achieving 40-70% hit rates vs 10-20% for exact-match caching.
+Caching retrieval results by query similarity rather than exact string match is a major architectural optimization. **Semantic caching** compares new queries against cached query embeddings (cosine >= 0.90-0.95), handling paraphrased queries and achieving significantly higher hit rates than exact-match caching.
 
 Semantic caching is typically the first routing intercept — check the cache before any retrieval work.
 
@@ -1112,7 +1135,7 @@ class SemanticCache:
 def retrieve_with_cache(query: str, **kwargs):
     cached = cache.get(query)
     if cached:
-        return {"results": cached, "from_cache": True, "latency_ms": 12}
+        return {"results": cached, "from_cache": True}
     response = retriever.search(query, **kwargs)
     cache.set(query, response["results"])
     return {"results": response["results"], "from_cache": False}
@@ -1138,11 +1161,15 @@ class SemanticCache:
         if not cached_ids:
             return None
 
+        # NOTE: This linear scan is O(n) per lookup — pedagogical only.
+        # Production systems should use Redis Stack's vector search (HNSW indexing)
+        # or a dedicated vector store for sub-linear lookup.
         max_sim, best_id = -1.0, None
         for qid in cached_ids:
             qid = qid.decode('utf-8')
             cached_emb = json.loads(self.redis.get(f"cache:query:{qid}") or "null")
             if cached_emb is None:
+                self.redis.srem("cache:query_index", qid)  # Clean up expired entries
                 continue
             sim = np.dot(query_emb, cached_emb) / (np.linalg.norm(query_emb) * np.linalg.norm(cached_emb))
             if sim > max_sim:
@@ -1156,14 +1183,16 @@ class SemanticCache:
     def set(self, query, results):
         emb = self.encoder.encode(query)
         qid = self._query_id(emb)
+        # NOTE: These three calls are non-atomic — production code should use
+        # a Redis pipeline or transaction to avoid partial state on failure.
         self.redis.setex(f"cache:query:{qid}", self.ttl, json.dumps(emb.tolist()))
         self.redis.setex(f"cache:results:{qid}", self.ttl, json.dumps(results))
         self.redis.sadd("cache:query_index", qid)
 ```
 
-**Threshold tuning**: 0.85-0.90 (50-70% hit rate, 85-92% precision — FAQ systems), 0.90-0.95 (40-60%, 92-98% — recommended default), 0.95-0.99 (20-40%, 98-99.5% — compliance-critical). For false positive management: seed with verified pairs, sample 1-5% of borderline hits for review, optionally validate with cross-encoder.
+**Threshold tuning**: 0.85-0.90 (higher hit rate, lower precision — narrow/repetitive corpora), 0.90-0.95 (balanced — recommended default), 0.95-0.99 (low hit rate, very high precision — compliance-critical). The right threshold depends on corpus breadth: narrow FAQ corpora tolerate lower thresholds, while broad corpora need higher thresholds to avoid wrong answers. Exact hit-rate and precision numbers vary significantly by query distribution and domain. For false positive management: seed with verified pairs, sample borderline hits for review, optionally validate with cross-encoder.
 
-**Cache invalidation**: 1-hour TTL for dynamic content, 24-hour for stable, 7-day for reference. Add event-driven invalidation for critical accuracy. Alternatives: GPTCache, LangChain semantic cache, Redis Stack.
+**Cache invalidation**: Use short TTLs for frequently changing content, longer TTLs for stable content, and longest for reference material. Add event-driven invalidation for critical accuracy. Alternatives: GPTCache, LangChain semantic cache (`RedisSemanticCache`), Redis Stack.
 
 ---
 
@@ -1180,10 +1209,10 @@ index = faiss.read_index("index.faiss")
 def search(query: str, k: int = 5):
     query_embedding = model.encode(query).reshape(1, -1).astype('float32')
     distances, indices = index.search(query_embedding, k=k)
-    return [{"chunk": chunks[i], "score": float(distances[0][j])} for j, i in enumerate(indices[0])]
+    return [{"chunk": chunks[i], "distance": float(distances[0][j])} for j, i in enumerate(indices[0])]
 ```
 
-**Two-stage pipeline** (production, +10-20% MRR):
+**Two-stage pipeline** (production, significant MRR improvement):
 
 ```python
 def two_stage_search(query: str, stage1_k: int = 50, final_k: int = 5):
@@ -1199,18 +1228,9 @@ def two_stage_search(query: str, stage1_k: int = 50, final_k: int = 5):
 
 ```python
 class HybridRetriever:
-    def search(self, query: str, stage1_k: int = 100, final_k: int = 5, alpha: float = 0.5):
-        # Dense + sparse retrieval with score normalization
-        # ... combine with alpha weighting ...
-        # Rerank with cross-encoder
-        # ... return top final_k ...
-```
-
-```python
-class HybridRetriever:
     def __init__(self, index_path: str, chunks_path: str):
         self.retriever = SentenceTransformer('all-mpnet-base-v2')
-        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
         self.index = faiss.read_index(index_path)
         self.chunks = np.load(chunks_path, allow_pickle=True)
         tokenized_chunks = [chunk.lower().split() for chunk in self.chunks]
@@ -1220,7 +1240,8 @@ class HybridRetriever:
         query_embedding = self.retriever.encode(query)
         dense_distances, dense_indices = self.index.search(
             query_embedding.reshape(1, -1).astype('float32'), k=stage1_k)
-        dense_scores = 1 / (1 + dense_distances[0])
+        # FAISS returns squared L2 distances; sqrt converts to true L2 before normalization
+        dense_scores = 1 / (1 + np.sqrt(dense_distances[0]))
 
         sparse_scores = self.bm25.get_scores(query.lower().split())
 
@@ -1244,8 +1265,9 @@ class HybridRetriever:
 
 ```python
 from dataclasses import dataclass
-from functools import lru_cache
 import time, logging
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class RetrievalMetrics:
@@ -1258,16 +1280,25 @@ class ProductionRetriever(HybridRetriever):
     def __init__(self, index_path, chunks_path):
         super().__init__(index_path, chunks_path)
         self.metrics_history = []
+        self._embed_cache = {}
 
-    @lru_cache(maxsize=1000)
-    def _embed_query_cached(self, query: str):
-        return tuple(self.retriever.encode(query).tolist())
+    def _embed_query(self, query: str):
+        if query not in self._embed_cache:
+            self._embed_cache[query] = self.retriever.encode(query)
+        return self._embed_cache[query]
 
-    def search(self, query, stage1_k=100, final_k=5, alpha=0.5, enable_cache=True):
+    def search(self, query, stage1_k=100, final_k=5, alpha=0.5):
         start = time.time()
-        # ... hybrid retrieval with timing per stage ...
-        # ... error handling, metrics logging ...
+
+        s1_start = time.time()
+        query_embedding = self._embed_query(query)
+        results = super().search(query, stage1_k=stage1_k, final_k=final_k, alpha=alpha)
+        s1_ms = (time.time() - s1_start) * 1000
+
         total_ms = (time.time() - start) * 1000
+        self.metrics_history.append(RetrievalMetrics(
+            query=query, stage1_latency_ms=s1_ms,
+            stage2_latency_ms=0, total_latency_ms=total_ms))
         logger.info(f"Retrieved {final_k} chunks in {total_ms:.1f}ms")
         return {"results": results, "metrics": {"total_latency_ms": total_ms}}
 
@@ -1291,12 +1322,12 @@ The entire pipeline described above assumes a fixed DAG: query → rewrite → r
 |--------|-------------|-------------|
 | **Architecture** | Fixed DAG (query → retrieve → generate) | Agent loop (reason → act → observe → repeat) |
 | **Retrieval calls** | 1 (sometimes 2-3 with decomposition) | 1-10+ (agent decides) |
-| **Latency** | Predictable (200-500ms retrieval) | Variable (1-30s depending on iterations) |
+| **Latency** | Predictable (sub-second retrieval) | Variable (seconds to tens of seconds depending on iterations) |
 | **Cost** | Low (1 LLM call for generation) | Higher (multiple LLM calls for reasoning) |
 | **Best for** | Factual lookups, FAQ, single-hop questions | Multi-hop reasoning, research, complex analysis |
 | **Predictability** | High (deterministic path) | Lower (agent may take unexpected paths) |
 
-**When to use pipeline RAG**: Latency-sensitive applications (<500ms), predictable query types, FAQ/support systems, cost-sensitive workloads. **When to use agentic RAG**: Complex multi-hop questions, research tasks requiring synthesis across many sources, queries where the first retrieval may not contain the full answer.
+**When to use pipeline RAG**: Latency-sensitive applications, predictable query types, FAQ/support systems, cost-sensitive workloads. **When to use agentic RAG**: Complex multi-hop questions, research tasks requiring synthesis across many sources, queries where the first retrieval may not contain the full answer.
 
 ### Key agentic patterns
 
@@ -1310,6 +1341,7 @@ def agentic_retrieve(question: str, max_iterations: int = 5):
     messages = [{"role": "user", "content": question}]
     for _ in range(max_iterations):
         response = llm.invoke(messages, tools=tools)
+        messages.append(response.message)
         if response.tool_calls:
             for call in response.tool_calls:
                 results = tools[0]["fn"](call.arguments["query"])
@@ -1319,11 +1351,11 @@ def agentic_retrieve(question: str, max_iterations: int = 5):
     return response.content
 ```
 
-**Self-RAG** (Asai et al., 2023; ICLR 2024 oral, top 1%): The model generates special reflection tokens — `[Retrieve]` (should I retrieve?), `[ISREL]` (is the retrieved passage relevant?), `[ISSUP]` (is the generation supported?), `[ISUSE]` (is the response useful?) — enabling adaptive retrieval. The model only retrieves when it determines its knowledge is insufficient, and self-evaluates the quality of retrieved context before generating.
+**Self-RAG** (Asai et al., 2023; ICLR 2024 oral, top 1%): The model generates special reflection tokens — `[Retrieve]` (should I retrieve?), `[IsRel]` (is the retrieved passage relevant?), `[IsSup]` (is the generation supported?), `[IsUse]` (is the response useful?) — enabling adaptive retrieval. The model only retrieves when it determines its knowledge is insufficient, and self-evaluates the quality of retrieved context before generating.
 
 **Corrective RAG (CRAG)** (Yan et al., 2024): Adds a lightweight retrieval evaluator (fine-tuned T5-large) that classifies retrieved documents as Correct, Incorrect, or Ambiguous. On Correct, it applies a decompose-then-recompose algorithm to strip noise. On Incorrect, it discards retrieval and triggers web search as a fallback. On Ambiguous, it combines refined retrieval with web results. CRAG is plug-and-play — it layers on top of any existing RAG pipeline.
 
-**Frameworks**: LangGraph (graph-based agent orchestration with explicit state), LlamaIndex (AgentRunner with built-in retrieval tools), Haystack (lower framework overhead than LangChain), CrewAI (multi-agent collaboration), and Autogen (conversational multi-agent) all support agentic RAG patterns.
+**Frameworks**: LangGraph (graph-based agent orchestration with explicit state), LlamaIndex (AgentWorkflow with built-in retrieval tools), Haystack (lower framework overhead than LangChain), CrewAI (multi-agent collaboration), and AG2 (formerly AutoGen; community fork after Microsoft retired AutoGen in favor of Microsoft Agent Framework) all support agentic RAG patterns.
 
 **Practical recommendation**: Use pipeline RAG by default and trigger an agentic loop only when failure signals are detected — low retrieval confidence, missing citations, contradictory evidence, or user follow-ups indicating the initial answer was insufficient. This keeps most queries efficient while providing a recovery path for complex cases.
 
@@ -1337,7 +1369,7 @@ Standard RAG retrieval assumes text-in, text-out. Two emerging paradigms extend 
 
 Vector similarity retrieval struggles with queries requiring synthesis across many documents ("What are the main themes in this dataset?" or multi-hop reasoning "How does X relate to Y through Z?"). **GraphRAG** builds a knowledge graph from documents — extracting entities and relationships — then uses graph traversal (community detection, path finding) alongside vector similarity.
 
-Microsoft's GraphRAG approach (2024): (1) extract entities and relationships from chunks using an LLM, (2) build a graph and detect communities via hierarchical Leiden algorithm, (3) generate community summaries at multiple granularity levels, (4) at query time, retrieve via both vector search on chunks and graph traversal on communities. In Microsoft's evaluation, GraphRAG achieved ~80% accuracy on global sensemaking questions vs ~50% for standard vector RAG, with 72-83% comprehensiveness scores. The trade-off is significantly higher indexing cost (many LLM calls for extraction + summarization), though LazyGraphRAG (2025) reduces this to 0.1% of the cost.
+Microsoft's GraphRAG approach (2024): (1) extract entities and relationships from chunks using an LLM, (2) build a graph and detect communities via hierarchical Leiden algorithm, (3) generate community summaries at multiple granularity levels, (4) at query time, retrieve via both vector search on chunks and graph traversal on communities. In Microsoft's evaluation, LLM evaluators preferred GraphRAG answers for comprehensiveness 72-83% of the time over standard vector RAG on global sensemaking queries. The trade-off is significantly higher indexing cost (many LLM calls for extraction + summarization), though LazyGraphRAG (2024) reduces this to 0.1% of the cost by deferring LLM use to query time.
 
 **When GraphRAG helps**: Multi-hop reasoning, thematic/summarization queries across large corpora, datasets with rich entity relationships. **When to skip**: Simple factual lookups, small document sets, latency-constrained systems (graph construction is expensive).
 
@@ -1347,7 +1379,7 @@ Text-only RAG fails for documents with charts, diagrams, tables, or images. Two 
 
 **CLIP-based retrieval**: Encode images and text into a shared embedding space. Query with text, retrieve relevant images (or vice versa). Works for image search but does not understand document layout.
 
-**ColPali and vision-language models** (ICLR 2025): Encode entire document pages as images using a vision-language model (PaliGemma), skipping OCR and parsing entirely. ColPali uses a late-interaction architecture (like ColBERT) over ~1,030 page image patches, achieving strong retrieval on visually-rich documents like PDFs with tables, figures, and complex layouts. Successors include ColQwen2 (multi-resolution) and domain-specific variants. Trade-off: dramatically simpler indexing pipeline vs ~100x more vectors per page than single-vector models.
+**ColPali and vision-language models** (ICLR 2025): Encode entire document pages as images using a vision-language model (PaliGemma), skipping OCR and parsing entirely. ColPali uses a late-interaction architecture (like ColBERT) over ~1,030 patch vectors per page (1,024 image patches + instruction tokens), achieving strong retrieval on visually-rich documents like PDFs with tables, figures, and complex layouts. Successors include ColQwen2 (multi-resolution) and domain-specific variants. Trade-off: dramatically simpler indexing pipeline vs ~100x more vectors per page than single-vector models.
 
 **When multimodal matters**: Document collections with significant visual content (scientific papers, financial reports, slide decks, manuals with diagrams). **When to skip**: Text-heavy corpora where standard chunking and embedding works well.
 
@@ -1357,17 +1389,17 @@ Text-only RAG fails for documents with charts, diagrams, tables, or images. Two 
 
 **Using only dense retrieval**: Misses exact keyword matches. "HIPAA compliance" should strongly favor documents containing "HIPAA." Use hybrid search.
 
-**Skipping reranking**: If you have >50ms latency budget, add reranking. Typically improves MRR by 10-20%.
+**Skipping reranking**: If your latency budget allows it, add reranking. Typically yields a meaningful MRR improvement.
 
 **Reranking too few candidates**: Retrieve 50-100 in stage 1, rerank to 10-20, return top 5. Give the reranker room to correct stage 1 errors.
 
-**Not tuning efSearch**: HNSW defaults (efSearch=16) prioritize speed over recall. Set efSearch=50-100 for 95-98% recall.
+**Not tuning efSearch**: HNSW library defaults (typically 10-40, varying by library) prioritize speed over recall. Increase efSearch for better recall at the cost of latency; benchmark on your dataset.
 
-**Returning low-scoring results**: If all top-5 scores are <0.3, return "no relevant information" instead of showing irrelevant chunks.
+**Returning low-scoring results**: If all top-k scores fall below a relevance threshold, return "no relevant information" instead of showing irrelevant chunks. Calibrate the threshold per embedding model and domain — score distributions vary significantly across models.
 
 **Ignoring query length**: Single-word queries need expansion. 50+ word queries need decomposition.
 
-**Not caching embeddings**: If 20% of queries repeat, cache their embeddings (30ms → <1ms).
+**Not caching embeddings**: If a significant fraction of queries repeat, cache their embeddings to avoid redundant encoding.
 
 **Filtering after retrieval**: Filter at query time using vector DB filters, not after retrieval.
 
@@ -1389,9 +1421,9 @@ Text-only RAG fails for documents with charts, diagrams, tables, or images. Two 
 
 **Inadequate RBAC metadata**: Add hierarchical RBAC fields at indexing time (roles, departments, owner_id), not just coarse access_level.
 
-**Using ColBERT for <100 candidates**: Cross-encoder is fast enough and more accurate at that scale.
+**Using ColBERT for <100 candidates**: Cross-encoder is fast enough at that scale, and ColBERT's precomputed-token speed advantage doesn't matter with so few candidates.
 
-**Over-aggressive cache threshold (0.95-0.99)**: Barely better than exact-match. Use 0.90-0.95 for 40-60% hit rate.
+**Over-aggressive cache threshold (0.95-0.99)**: Barely better than exact-match. Use 0.90-0.95 for a meaningful improvement in hit rate.
 
 **Caching without TTL**: Set domain-appropriate TTL. Add event-driven invalidation for critical accuracy.
 
@@ -1418,16 +1450,16 @@ Hand-labeling 500 queries is a major bottleneck. The standard approach: use LLMs
 **Synthetic data generation**: Chunk your corpus → for each chunk, prompt an LLM to generate 1-3 questions that the chunk answers → you now have (question, ground_truth_chunk) pairs. Ragas and LlamaIndex both automate this, with Ragas adding "evolution" strategies (simple → reasoning → multi-context) to generate diverse difficulty levels.
 
 ```python
-# Ragas v0.2+ synthetic test generation (KnowledgeGraph-based)
+# Ragas synthetic test generation (API changes across versions — check docs)
 from ragas.testset import TestsetGenerator
-from ragas.llms import LangchainLLMWrapper
 
-generator = TestsetGenerator(llm=LangchainLLMWrapper(llm))
+generator = TestsetGenerator(llm=wrapped_llm)
 testset = generator.generate_with_langchain_docs(
     documents, testset_size=200,
-    distributions={simple: 0.5, reasoning: 0.25, multi_context: 0.25},
+    # Query type distribution — class names vary by Ragas version:
+    # v0.1: simple, reasoning, multi_context (from ragas.testset.evolutions)
+    # v0.2+: SingleHopSpecificQuery, MultiHopAbstractQuery, MultiHopSpecificQuery
 )
-# Returns DataFrame with: question, ground_truth, contexts, evolution_type
 
 # LlamaIndex equivalent
 from llama_index.core.evaluation import generate_question_context_pairs
@@ -1442,10 +1474,10 @@ qa_dataset = generate_question_context_pairs(
 
 | Framework | Key metrics | Unique strength | Cost |
 |-----------|------------|-----------------|------|
-| **Ragas** | Context precision, context recall, faithfulness, answer relevancy | End-to-end RAG eval + synthetic test generation | LLM calls (~$0.50-2/run for 200 queries) |
-| **TruLens** | Groundedness, relevance, sentiment | Real-time dashboard, production monitoring | LLM calls (similar) |
+| **Ragas** | Context precision, context recall, faithfulness, answer relevancy | End-to-end RAG eval + synthetic test generation | LLM calls (a few hundred queries per run) |
+| **TruLens** | Context relevance, groundedness, answer relevance (RAG Triad) | Real-time dashboard, production monitoring | LLM calls (similar) |
 | **ARES** (Stanford) | Prediction-powered inference | Statistically rigorous confidence intervals from fewer labels | Minimal LLM calls |
-| **DeepEval** | 14+ metrics, G-Eval | CI/CD native (pytest plugin), unit test syntax | LLM calls |
+| **DeepEval** | 50+ metrics, G-Eval | CI/CD native (pytest plugin), unit test syntax | LLM calls |
 
 **Retrieval-specific metrics**: **MRR@k** (reciprocal rank of first relevant result), **Hit Rate@k** (fraction of queries where at least one relevant result is in top k), **NDCG@k** (discounted cumulative gain normalized by ideal ranking). These measure retrieval quality independently of generation.
 
@@ -1475,14 +1507,14 @@ qa_dataset = generate_question_context_pairs(
 
 ### Quality vs cost trade-offs
 
-| Use Case | Hit Rate@5 | Latency | Cost/1K Queries |
-|----------|-----------|---------|-----------------|
-| FAQ chatbot | >85% | <100ms p50 | $0.05-0.10 |
-| Enterprise search | >90% | <150ms p50 | $0.10-0.20 |
-| Legal/Medical | >95% | <200ms p50 | $0.20-0.50 |
-| Internal KB | >80% | <200ms p50 | $0.02-0.05 |
+| Use Case | Hit Rate@5 | Latency | Relative Cost |
+|----------|-----------|---------|---------------|
+| FAQ chatbot | >85% | Low | Lowest (simple pipeline, caching) |
+| Enterprise search | >90% | Medium | Moderate (hybrid + reranking) |
+| Legal/Medical | >95% | Medium | Highest (multi-stage, high accuracy) |
+| Internal KB | >80% | Medium | Low (simpler pipeline, fewer queries) |
 
-**Cost optimization**: semantic caching (40-70% cost reduction), skip reranking for simple queries, hybrid search over dense-only (free quality gain), batch embeddings.
+**Cost optimization**: semantic caching (significant cost reduction by avoiding redundant retrieval + generation), skip reranking for simple queries, hybrid search over dense-only (free quality gain), batch embeddings.
 
 ---
 
@@ -1494,9 +1526,9 @@ Phased deployment strategy to minimize risk and measure impact: internal beta �
 
 | Phase | Duration | Audience | Success Criteria |
 |-------|----------|----------|-----------------|
-| **1. Internal beta** | 2-4 weeks | 10-20 internal users | >80% correct, Hit Rate@5 >85%, p99 <200ms |
+| **1. Internal beta** | 2-4 weeks | 10-20 internal users | >80% correct, Hit Rate@5 >85%, p99 meets latency SLA |
 | **2. Limited production** | 4-6 weeks | 10-25% users (A/B test) | Rating >3.8/5.0 AND >10% over baseline |
-| **3. Full rollout** | 2-4 weeks | 25% → 50% → 75% → 100% | Stable at scale, p95 <200ms, error <2% |
+| **3. Full rollout** | 2-4 weeks | 25% → 50% → 75% → 100% | Stable at scale, p95 meets latency SLA, error <2% |
 | **4. Deprecate baseline** | 30 days | Shadow mode only | Keep for emergency rollback, then decommission |
 
 ### A/B testing framework
@@ -1507,7 +1539,7 @@ Phased deployment strategy to minimize risk and measure impact: internal beta �
 
 ### Rollback plan
 
-**Triggers**: Hit Rate@5 <75%, user satisfaction <3.0/5.0 for >30%, p99 >1000ms for >5%, error rate >10%.
+**Triggers**: Hit Rate@5 <75%, user satisfaction <3.0/5.0 for >30%, p95 latency exceeds SLA threshold sustained, error rate >10%.
 **Mechanism**: Feature flag toggle (0% → 100% instant) or blue-green load balancer switch (<5 min).
 **Post-rollback**: Root cause analysis within 24 hours, fix on staging, restart at phase 2.
 
@@ -1530,13 +1562,13 @@ RAG systems have failure modes that impact business outcomes. Key risks and miti
 |------|--------|------------|
 | **Vector DB failure** | System down, support tickets spike | 3-node cluster with failover, daily S3 backups, fallback to keyword search |
 | **Embedding API outage** | Cannot embed queries | Exponential backoff retry, cached embeddings fallback, self-hosted backup model |
-| **Index corruption** | Wrong results, user satisfaction drops | Daily snapshots, automated chunk count validation, quarterly DR drill |
+| **Index corruption** | Wrong results, user satisfaction drops | Daily snapshots, automated chunk count validation, regular DR drills (annual minimum, quarterly for critical systems) |
 
 ### Quality risks
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| **Quality degradation over time** | Hit Rate drifts as documents, users, or query patterns change | Weekly automated eval, quarterly embedding retraining, document freshness monitoring, user feedback loop |
+| **Quality degradation over time** | Hit Rate drifts as documents, users, or query patterns change | Weekly automated eval, document freshness monitoring, user feedback loop; if fine-tuning a custom embedding model, retrain on a regular cadence (quarterly is common) |
 | **Embedding model change** | Must reindex all documents | Build new index in parallel, A/B test, hot-swap (no downtime) |
 
 ### Security risks
@@ -1558,19 +1590,19 @@ RAG systems have failure modes that impact business outcomes. Key risks and miti
 - **RPO**: <24 hours (daily backups)
 - **Backup**: Vector DB snapshots + original docs (S3) + metadata (DB) + config (git), multi-region, 30-day retention
 - **Incident response**: Detection (automated alerts) → Triage → Mitigation (rollback) → Recovery (restore) → Post-mortem
-- **On-call**: 3-5 engineers rotating weekly, expect 1-2 incidents per quarter
+- **On-call**: 3-5 engineers rotating weekly; incident rate varies widely by system maturity and scale
 
 ---
 
 ## Best practices
 
-**Default to two-stage retrieval.** Stage 1 retrieves 50-100 candidates in <50ms, stage 2 reranks to 5-10 in <50ms. MRR improvement 10-20%. This covers the majority of use cases. For enterprise systems with strict accuracy and latency SLAs (>300ms budget), consider three-stage retrieval (two-tower → ColBERT → cross-encoder) for an additional 2-5% accuracy gain.
+**Default to two-stage retrieval.** Stage 1 retrieves 50-100 candidates quickly, stage 2 reranks to 5-10 with a meaningful MRR improvement. This covers the majority of use cases. For enterprise systems with strict accuracy requirements and generous latency budgets, consider three-stage retrieval (two-tower → ColBERT → cross-encoder) for additional accuracy gains.
 
 **Default to hybrid search.** Dense + sparse with alpha=0.5. Adjust per query type.
 
 **Optimize stage 1 for recall, stage 2 for precision.** Use efSearch=50-100 for HNSW. It's okay if stage 1 ranks the correct chunk 20th as long as it's in the top 50.
 
-**Cache query embeddings for common queries.** 20% repeat rate → 30ms to <1ms.
+**Cache query embeddings for common queries.** In high-volume systems, a meaningful share of queries repeat — cache hits eliminate embedding inference latency entirely.
 
 **Monitor retrieval independently of generation.** Track Hit Rate@5 and MRR separately. Diagnose whether failures are retrieval or generation problems.
 
@@ -1588,14 +1620,14 @@ RAG systems have failure modes that impact business outcomes. Key risks and miti
 
 **Apply compression after reranking, not before.** Only compress high-quality reranked candidates.
 
-**Choose parent-child strategy by document structure.** Linear → sentence window (size 3-5). Hierarchical → auto-merging (threshold 0.6).
+**Choose parent-child strategy by document structure.** Linear → sentence window (size 3). Hierarchical → auto-merging (threshold 0.5).
 
-**Implement semantic caching for FAQ/support systems.** 40-70% hit rate, 4-8x faster, 40-73% cost savings.
+**Implement semantic caching for FAQ/support systems.** Significantly higher hit rate than exact-match caching, with substantial latency and cost savings.
 
-**Use Matryoshka embeddings for large-scale indexes.** Truncate to 256-dim for stage 1 with ~2-4% accuracy drop; let the cross-encoder recover precision in stage 2.
+**Use Matryoshka embeddings for large-scale indexes.** Truncate to 256-dim for stage 1 with minimal accuracy drop; let the cross-encoder recover precision in stage 2.
 
 **Add self-querying when users specify constraints.** Dates, categories, and named entities in queries should become metadata filters, not embedding noise.
 
-**Default to pipeline RAG; move to agentic when pipeline fails.** Pipeline RAG handles 80%+ of use cases at 200-500ms. Reserve agentic RAG for multi-hop reasoning and complex research queries.
+**Default to pipeline RAG; move to agentic when pipeline fails.** Pipeline RAG handles the majority of use cases with sub-second latency. Reserve agentic RAG for multi-hop reasoning and complex research queries.
 
 **Automate retrieval evaluation with synthetic test data.** Generate 200-500 question-context pairs from your corpus, run MRR@10 and Hit Rate@5 on every deployment, set regression thresholds.
