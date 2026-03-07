@@ -111,9 +111,10 @@ Four approaches to intent classification: rule-based (keyword matching, <1ms, fo
 ```python
 from sentence_transformers import SentenceTransformer, util
 
-model = SentenceTransformer('all-MiniLM-L6-v2')
+ENCODER_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_INTENT = "knowledge_base"
 
-intent_examples = {
+INTENT_EXAMPLES: dict[str, list[str]] = {
     "greeting": ["Hi", "Hello", "Thanks", "Goodbye"],
     "knowledge_base": ["How do I reset my password?", "What is RAG?"],
     "structured_data": ["What's my account balance?", "Show my recent orders"],
@@ -121,19 +122,28 @@ intent_examples = {
     "out_of_scope": ["Tell me a joke", "What's the meaning of life?"],
 }
 
-intent_embeddings = {
-    intent: model.encode(examples)
-    for intent, examples in intent_examples.items()
-}
 
-def classify_intent(query: str, threshold: float = 0.5) -> str:
-    query_embedding = model.encode(query)
-    intent_scores = {
-        intent: float(util.cos_sim(query_embedding, embs)[0].max())
-        for intent, embs in intent_embeddings.items()
-    }
-    best_intent = max(intent_scores, key=intent_scores.get)
-    return best_intent if intent_scores[best_intent] >= threshold else "knowledge_base"
+class SemanticIntentClassifier:
+    """Classifies query intent by cosine similarity against few-shot exemplars."""
+
+    def __init__(self, model_name: str = ENCODER_MODEL) -> None:
+        self.model = SentenceTransformer(model_name)
+        self.intent_embeddings = {
+            intent: self.model.encode(examples)
+            for intent, examples in INTENT_EXAMPLES.items()
+        }
+
+    def classify(self, query: str, threshold: float = 0.5) -> str:
+        """Returns the best-matching intent, or DEFAULT_INTENT if below threshold."""
+        if not query.strip():
+            raise ValueError("query must be non-empty")
+        query_embedding = self.model.encode(query)
+        intent_scores = {
+            intent: float(util.cos_sim(query_embedding, embs)[0].max())
+            for intent, embs in self.intent_embeddings.items()
+        }
+        best_intent = max(intent_scores, key=intent_scores.get)
+        return best_intent if intent_scores[best_intent] >= threshold else DEFAULT_INTENT
 ```
 
 **Rule-based (for small systems with <10 intents):**
@@ -144,16 +154,20 @@ from typing import Literal
 
 IntentType = Literal["greeting", "knowledge_base", "structured_data", "real_time", "out_of_scope"]
 
+INTENT_PATTERNS: dict[IntentType, str] = {
+    "greeting": r"\b(hi|hello|hey|thanks|thank you|bye|goodbye)\b",
+    "structured_data": r"\b(my account|my balance|my order|my subscription|purchase history)\b",
+    "real_time": r"\b(weather|temperature|forecast|stock price|news)\b",
+    "out_of_scope": r"\b(joke|poem|story|write code|meaning of life)\b",
+}
+
+
 def classify_intent_simple(query: str) -> IntentType:
+    """Matches query against keyword patterns; falls back to knowledge_base."""
     query_lower = query.lower()
-    if re.search(r'\b(hi|hello|hey|thanks|thank you|bye|goodbye)\b', query_lower):
-        return "greeting"
-    if re.search(r'\b(my account|my balance|my order|my subscription|purchase history)\b', query_lower):
-        return "structured_data"
-    if re.search(r'\b(weather|temperature|forecast|stock price|news)\b', query_lower):
-        return "real_time"
-    if re.search(r'\b(joke|poem|story|write code|meaning of life)\b', query_lower):
-        return "out_of_scope"
+    for intent, pattern in INTENT_PATTERNS.items():
+        if re.search(pattern, query_lower):
+            return intent
     return "knowledge_base"
 ```
 
@@ -163,6 +177,29 @@ def classify_intent_simple(query: str) -> IntentType:
 from sentence_transformers import SentenceTransformer
 from sklearn.linear_model import LogisticRegression
 
+ENCODER_MODEL = "all-MiniLM-L6-v2"
+MAX_SOLVER_ITERATIONS = 1000
+
+
+class MLIntentClassifier:
+    """Trains a logistic regression classifier on embedded query examples."""
+
+    def __init__(
+        self,
+        training_data: list[tuple[str, str]],
+        model_name: str = ENCODER_MODEL,
+    ) -> None:
+        self.encoder = SentenceTransformer(model_name)
+        queries, intents = zip(*training_data)
+        embeddings = self.encoder.encode(queries)
+        self.classifier = LogisticRegression(max_iter=MAX_SOLVER_ITERATIONS)
+        self.classifier.fit(embeddings, intents)
+
+    def classify(self, query: str) -> str:
+        """Returns predicted intent label for a single query."""
+        return self.classifier.predict([self.encoder.encode([query])[0]])[0]
+
+
 training_data = [
     ("Hi", "greeting"), ("How do I reset my password?", "knowledge_base"),
     ("What's my account balance?", "structured_data"),
@@ -170,35 +207,30 @@ training_data = [
     ("Tell me a joke", "out_of_scope"),
     # ... 100-1000+ examples
 ]
-
-queries, intents = zip(*training_data)
-model = SentenceTransformer('all-MiniLM-L6-v2')
-query_embeddings = model.encode(queries)
-
-classifier = LogisticRegression(max_iter=1000)
-classifier.fit(query_embeddings, intents)
-
-def classify_intent_ml(query: str) -> str:
-    return classifier.predict([model.encode([query])[0]])[0]
+classifier = MLIntentClassifier(training_data)
 ```
 
 **Routing logic:**
 
 ```python
-def route_query(query: str, user_id: str) -> dict:
+GREETING_RESPONSE = "Hi! How can I help?"
+OUT_OF_SCOPE_RESPONSE = "I'm designed for account and product support."
+
+
+def route_query(query: str, user_id: str) -> dict[str, str]:
+    """Classifies query intent and dispatches to the appropriate backend."""
     intent = classify_intent(query)
     if intent == "greeting":
-        return {"intent": intent, "response": "Hi! How can I help?", "source": "direct"}
-    elif intent == "knowledge_base":
+        return {"intent": intent, "response": GREETING_RESPONSE, "source": "direct"}
+    if intent == "knowledge_base":
         chunks = hybrid_search(query, documents, k=5)
         return {"intent": intent, "response": llm_generate(query, chunks), "source": "vector_db"}
-    elif intent == "structured_data":
+    if intent == "structured_data":
         result = database.execute(generate_sql(query, user_id))
         return {"intent": intent, "response": format_sql_result(result), "source": "sql"}
-    elif intent == "real_time":
+    if intent == "real_time":
         return {"intent": intent, "response": call_api(query), "source": "api"}
-    else:
-        return {"intent": "out_of_scope", "response": "I'm designed for account and product support.", "source": "direct"}
+    return {"intent": "out_of_scope", "response": OUT_OF_SCOPE_RESPONSE, "source": "direct"}
 ```
 
 **Multi-step routing** for complex queries needing multiple backends (e.g., "Show my recent orders and recommend similar products"): use an LLM to decompose the query into steps, classify and route each step independently, then combine results.
@@ -235,16 +267,19 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 import faiss
 
-model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+ENCODER_MODEL = "sentence-transformers/all-mpnet-base-v2"
+HNSW_M = 32
+STAGE1_K = 50
 
-# Index time: encode all documents once
+model = SentenceTransformer(ENCODER_MODEL)
+
 doc_embeddings = model.encode(documents, convert_to_numpy=True)
-index = faiss.IndexHNSWFlat(doc_embeddings.shape[1], 32)  # L2 default; equivalent to cosine on normalized vectors
+# L2 default; equivalent to cosine on normalized vectors
+index = faiss.IndexHNSWFlat(doc_embeddings.shape[1], HNSW_M)
 index.add(doc_embeddings)
 
-# Search time: encode query, find nearest neighbors
 query_embedding = model.encode("What is RAG?", convert_to_numpy=True)
-distances, indices = index.search(query_embedding[np.newaxis, :], k=50)
+distances, indices = index.search(query_embedding[np.newaxis, :], k=STAGE1_K)
 ```
 
 The landmark two-tower architecture from Facebook AI Research. Uses separate BERT-based encoders for queries and contexts, trained with contrastive loss.
@@ -252,11 +287,16 @@ The landmark two-tower architecture from Facebook AI Research. Uses separate BER
 ```python
 from transformers import DPRQuestionEncoder, DPRContextEncoder, DPRQuestionEncoderTokenizer, DPRContextEncoderTokenizer
 import torch
+import numpy as np
 
-q_encoder = DPRQuestionEncoder.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
-c_encoder = DPRContextEncoder.from_pretrained("facebook/dpr-ctx_encoder-single-nq-base")
-q_tokenizer = DPRQuestionEncoderTokenizer.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
-c_tokenizer = DPRContextEncoderTokenizer.from_pretrained("facebook/dpr-ctx_encoder-single-nq-base")
+DPR_QUESTION_MODEL = "facebook/dpr-question_encoder-single-nq-base"
+DPR_CONTEXT_MODEL = "facebook/dpr-ctx_encoder-single-nq-base"
+STAGE1_K = 50
+
+q_encoder = DPRQuestionEncoder.from_pretrained(DPR_QUESTION_MODEL)
+c_encoder = DPRContextEncoder.from_pretrained(DPR_CONTEXT_MODEL)
+q_tokenizer = DPRQuestionEncoderTokenizer.from_pretrained(DPR_QUESTION_MODEL)
+c_tokenizer = DPRContextEncoderTokenizer.from_pretrained(DPR_CONTEXT_MODEL)
 
 doc_tokens = c_tokenizer(documents, return_tensors="pt", padding=True, truncation=True)
 with torch.no_grad():
@@ -267,7 +307,7 @@ with torch.no_grad():
     query_embedding = q_encoder(**query_tokens).pooler_output.numpy()
 
 similarities = np.dot(doc_embeddings, query_embedding.T).squeeze()
-top_indices = np.argsort(similarities)[::-1][:50]
+top_indices = np.argsort(similarities)[::-1][:STAGE1_K]
 ```
 
 **When two-tower works**: Semantic paraphrases — "What causes rain?" matches "Precipitation occurs when atmospheric water vapor condenses..." despite sharing no keywords.
@@ -290,16 +330,17 @@ Standard embedding models produce fixed-dimension vectors (768-dim, 1536-dim). *
 ```python
 from openai import OpenAI
 
+EMBEDDING_MODEL = "text-embedding-3-large"
+TRUNCATED_DIMS = 256
+
 client = OpenAI()
 
-# Full 3072-dim embedding
-full = client.embeddings.create(input="What is RAG?", model="text-embedding-3-large")
+full = client.embeddings.create(input="What is RAG?", model=EMBEDDING_MODEL)
 
-# Truncated 256-dim — API handles it natively
 compact = client.embeddings.create(
-    input="What is RAG?", model="text-embedding-3-large", dimensions=256
+    input="What is RAG?", model=EMBEDDING_MODEL, dimensions=TRUNCATED_DIMS
 )
-# For models without native truncation: embedding[:256] then L2-normalize
+# For models without native truncation: embedding[:TRUNCATED_DIMS] then L2-normalize
 ```
 
 **MRL in two-stage retrieval**: Use 256-dim embeddings for stage 1 (fast ANN recall over millions of documents), then let the cross-encoder handle precision in stage 2. The accuracy drop from truncation is typically smaller than the cross-encoder's improvement — so the pipeline as a whole loses almost nothing while stage 1 becomes significantly faster and cheaper.
@@ -316,11 +357,14 @@ BM25 scores documents by term frequency (TF) and inverse document frequency (IDF
 from rank_bm25 import BM25Okapi
 import numpy as np
 
+STAGE1_K = 50
+
 tokenized_docs = [doc.lower().split() for doc in documents]
 bm25 = BM25Okapi(tokenized_docs)
 
-scores = bm25.get_scores("HIPAA compliance requirements".lower().split())
-top_indices = np.argsort(scores)[::-1][:50]
+query = "HIPAA compliance requirements"
+scores = bm25.get_scores(query.lower().split())
+top_indices = np.argsort(scores)[::-1][:STAGE1_K]
 ```
 
 **How BM25 works**: TF rewards more term occurrences with saturation (10th occurrence adds less than 1st). IDF weights rare terms higher ("HIPAA" beats "the"). Document length normalization prevents unfair penalization of long documents. Key parameters: k1 (term saturation, default 1.2) and b (length normalization, default 0.75).
@@ -351,18 +395,28 @@ SPLADE solves the vocabulary mismatch problem that plagues BM25 — a query abou
 from transformers import AutoModelForMaskedLM, AutoTokenizer
 import torch
 
-tokenizer = AutoTokenizer.from_pretrained("naver/splade-cocondenser-ensembledistil")
-model = AutoModelForMaskedLM.from_pretrained("naver/splade-cocondenser-ensembledistil")
+SPLADE_MODEL = "naver/splade-cocondenser-ensembledistil"
+MAX_TOKEN_LENGTH = 256
 
-def encode_splade(text: str) -> dict:
-    tokens = tokenizer(text, return_tensors="pt", truncation=True, max_length=256)
-    with torch.no_grad():
-        logits = model(**tokens).logits
-    # Max pooling over sequence length, then ReLU + log(1+x) for sparsity
-    weights = torch.max(torch.log1p(torch.relu(logits)) * tokens["attention_mask"].unsqueeze(-1), dim=1).values
-    # Extract non-zero terms
-    non_zero = weights.squeeze().nonzero().squeeze()
-    return {tokenizer.decode(idx.item()): weights[0, idx].item() for idx in non_zero}
+
+class SpladeEncoder:
+    """Encodes text into SPLADE sparse vectors using learned term expansion."""
+
+    def __init__(self, model_name: str = SPLADE_MODEL) -> None:
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForMaskedLM.from_pretrained(model_name)
+
+    def encode(self, text: str) -> dict[str, float]:
+        """Returns sparse vector mapping vocabulary terms to importance weights."""
+        tokens = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=MAX_TOKEN_LENGTH)
+        with torch.no_grad():
+            logits = self.model(**tokens).logits
+        # Max pooling over sequence length, then ReLU + log(1+x) for sparsity
+        weights = torch.max(
+            torch.log1p(torch.relu(logits)) * tokens["attention_mask"].unsqueeze(-1), dim=1
+        ).values
+        non_zero = weights.squeeze().nonzero().squeeze()
+        return {self.tokenizer.decode(idx.item()): weights[0, idx].item() for idx in non_zero}
 ```
 
 **When SPLADE works**: Hybrid setups where you want semantic sparse retrieval without a separate dense index. Particularly strong for domain-specific vocabulary and abbreviations. **When to skip**: If you already run hybrid dense + BM25 and don't want to retrain; or if sub-5ms latency is required (BM25 is faster).
@@ -374,27 +428,38 @@ def encode_splade(text: str) -> dict:
 Combine dense and sparse retrieval to get the best of both: semantic understanding and keyword precision.
 
 ```python
+EPSILON = 1e-8
+
+
+def _min_max_normalize(scores: np.ndarray) -> np.ndarray:
+    """Normalizes scores to [0, 1] range."""
+    return (scores - scores.min()) / (scores.max() - scores.min() + EPSILON)
+
+
 def hybrid_search(
     query: str,
     documents: list[str],
     doc_embeddings: np.ndarray,
+    encoder: SentenceTransformer,
+    bm25: BM25Okapi,
     k: int = 50,
     alpha: float = 0.5,
-):
-    # Dense retrieval
-    query_embedding = model.encode(query, convert_to_numpy=True)
-    dense_scores = np.dot(doc_embeddings, query_embedding)
+) -> list[tuple[int, float]]:
+    """Fuses dense cosine and BM25 sparse scores with min-max normalization."""
+    if not documents:
+        raise ValueError("documents must be non-empty")
 
-    # Sparse retrieval
+    query_embedding = encoder.encode(query, convert_to_numpy=True)
+    dense_scores = np.dot(doc_embeddings, query_embedding)
     sparse_scores = bm25.get_scores(query.lower().split())
 
     # Normalize both to [0, 1] — critical for fair combination
-    dense_norm = (dense_scores - dense_scores.min()) / (dense_scores.max() - dense_scores.min() + 1e-8)
-    sparse_norm = (sparse_scores - sparse_scores.min()) / (sparse_scores.max() - sparse_scores.min() + 1e-8)
+    dense_norm = _min_max_normalize(dense_scores)
+    sparse_norm = _min_max_normalize(sparse_scores)
 
     hybrid_scores = alpha * dense_norm + (1 - alpha) * sparse_norm
     top_indices = np.argsort(hybrid_scores)[::-1][:k]
-    return [(i, hybrid_scores[i]) for i in top_indices]
+    return [(int(i), float(hybrid_scores[i])) for i in top_indices]
 ```
 
 Precompute `doc_embeddings` once at index time. Search-time work should encode only the query, score against stored vectors, and fuse with sparse scores.
@@ -404,8 +469,13 @@ Precompute `doc_embeddings` once at index time. Search-time work should encode o
 **Alternative: Reciprocal Rank Fusion (RRF)** merges ranked lists without score normalization: `score(doc) = sum(1 / (k + rank))` where rank starts at 1 and k=60. More robust than score combination but less tunable. Use RRF when you don't have time to tune alpha.
 
 ```python
-def reciprocal_rank_fusion(dense_ranks: list[int], sparse_ranks: list[int], k: int = 60):
-    scores = {}
+def reciprocal_rank_fusion(
+    dense_ranks: list[int],
+    sparse_ranks: list[int],
+    k: int = 60,
+) -> list[tuple[int, float]]:
+    """Merges ranked lists using RRF: score(doc) = sum(1 / (k + rank))."""
+    scores: dict[int, float] = {}
     for rank, doc_id in enumerate(dense_ranks):
         scores[doc_id] = scores.get(doc_id, 0) + 1 / (k + rank + 1)
     for rank, doc_id in enumerate(sparse_ranks):
@@ -425,17 +495,20 @@ Unlike two-tower (separate encoders), cross-encoders jointly encode query and do
 
 ```python
 from sentence_transformers import CrossEncoder
+import numpy as np
 
-reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
+RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
+STAGE1_K = 50
+FINAL_K = 5
 
-# Stage 1: Get 50 candidates
-candidates = hybrid_search(query, documents, k=50)
+reranker = CrossEncoder(RERANKER_MODEL)
+
+candidates = hybrid_search(query, documents, k=STAGE1_K)
 candidate_docs = [documents[i] for i, score in candidates]
 
-# Stage 2: Rerank
 pairs = [[query, doc] for doc in candidate_docs]
 rerank_scores = reranker.predict(pairs)
-top_5_docs = [candidate_docs[i] for i in np.argsort(rerank_scores)[::-1][:5]]
+top_docs = [candidate_docs[i] for i in np.argsort(rerank_scores)[::-1][:FINAL_K]]
 ```
 
 **Models**: ms-marco-MiniLM-L6-v2 (fast, 6 layers, default), ms-marco-MiniLM-L12-v2 (better quality, 2x slower), mmarco-mMiniLMv2-L12-H384-v1 (multilingual, 14 languages).
@@ -463,12 +536,16 @@ ColBERT:    Query → [N × 128-dim vectors],  Doc → [M × 128-dim vectors]
 ```python
 from ragatouille import RAGPretrainedModel
 
-colbert_model = RAGPretrainedModel.from_pretrained("colbert-ir/colbertv2.0")
+COLBERT_MODEL = "colbert-ir/colbertv2.0"
+STAGE1_K = 100
+STAGE2_K = 50
+FINAL_K = 5
 
-# Three-stage: two-tower (1M → 100) → ColBERT (100 → 50) → cross-encoder (50 → 5)
-stage1_results = dense_retrieval(query, k=100)
-stage2_results = colbert_model.rerank(query=query, documents=stage1_results, k=50)
-stage3_results = cross_encoder.rerank(query, stage2_results, k=5)
+colbert_model = RAGPretrainedModel.from_pretrained(COLBERT_MODEL)
+
+stage1_results = dense_retrieval(query, k=STAGE1_K)
+stage2_results = colbert_model.rerank(query=query, documents=stage1_results, k=STAGE2_K)
+stage3_results = cross_encoder.rerank(query, stage2_results, k=FINAL_K)
 ```
 
 **Use ColBERT** when reranking 100-1000 candidates where cross-encoder is too slow. **Skip ColBERT** for <100 candidates (cross-encoder is fast enough) or when 6-10x storage overhead is unacceptable.
@@ -498,10 +575,10 @@ Cross-encoders use BERT-scale models (110M-340M parameters). LLM-based rerankers
 Vector indexes are built during indexing (see [RAG Indexing Vector Storage]({{ site.baseurl }}/docs/genai/rag/indexing/page/#vector-storage)). At search time, tune parameters to balance recall and latency.
 
 ```python
-index = faiss.read_index("index.faiss")
-index.hnsw.efSearch = 50  # Default 16, increase for better recall
+EFSEARCH_HIGH_RECALL = 50  # Default 16; increase for better recall at higher latency
 
-# Higher efSearch = better recall + higher latency (exact numbers depend on dataset, dimensions, and hardware)
+index = faiss.read_index("index.faiss")
+index.hnsw.efSearch = EFSEARCH_HIGH_RECALL
 ```
 
 Set efSearch=100 when high stage 1 recall is critical (missing the correct chunk means it won't be reranked). Set efSearch=20 when latency is tight and you're reranking 100+ candidates to compensate.
@@ -517,14 +594,17 @@ Filtering and boosting happen during search execution — they are not query rew
 Filter by document metadata before retrieval to reduce search space and improve precision.
 
 ```python
+COLLECTION_NAME = "documents"
+STAGE1_K = 50
+
 results = client.search(
-    collection_name="documents",
+    collection_name=COLLECTION_NAME,
     query_vector=query_embedding.tolist(),
     query_filter=Filter(must=[
         FieldCondition(key="category", match=MatchValue(value="healthcare")),
         FieldCondition(key="created_at", range=DatetimeRange(gte="2024-01-01T00:00:00Z")),
     ]),
-    limit=50,
+    limit=STAGE1_K,
 )
 ```
 
@@ -535,17 +615,32 @@ Helps when users specify constraints or for time-sensitive queries. Hurts when f
 Hard security filtering physically blocks unauthorized chunks from retrieval results. This is distinct from score boosting — unauthorized users never see restricted content, period. Critical for enterprise RAG handling sensitive data.
 
 ```python
-def secure_retrieval(query: str, user_token: str, k: int = 10):
-    payload = jwt.decode(user_token, SECRET_KEY, algorithms=["HS256"])
-    user_roles = payload.get("roles", [])
+COLLECTION_NAME = "documents"
+JWT_ALGORITHM = "HS256"
+
+
+def secure_retrieval(
+    query: str,
+    user_token: str,
+    encoder: SentenceTransformer,
+    client: QdrantClient,
+    secret_key: str,
+    k: int = 10,
+) -> list[dict[str, str | float]]:
+    """Retrieves chunks filtered by JWT-derived RBAC roles."""
+    if not query.strip():
+        raise ValueError("query must be non-empty")
+
+    payload = jwt.decode(user_token, secret_key, algorithms=[JWT_ALGORITHM])
+    user_roles: list[str] = payload.get("roles", [])
 
     rbac_filter = Filter(must=[
         FieldCondition(key="roles", match=MatchAny(any=user_roles))
     ])
 
     results = client.search(
-        collection_name="documents",
-        query_vector=model.encode(query).tolist(),
+        collection_name=COLLECTION_NAME,
+        query_vector=encoder.encode(query).tolist(),
         query_filter=rbac_filter,
         limit=k,
     )
@@ -585,19 +680,37 @@ metadata = {"roles": ["legal"], "owner_id": "user_456"}
 **Audit trail implementation**:
 
 ```python
-def secure_retrieval_with_audit(query: str, user_token: str, k: int = 10):
-    payload = jwt.decode(user_token, SECRET_KEY, algorithms=["HS256"])
-    user_id, user_roles = payload["user_id"], payload.get("roles", [])
+from datetime import datetime, UTC
+
+COLLECTION_NAME = "documents"
+JWT_ALGORITHM = "HS256"
+
+
+def secure_retrieval_with_audit(
+    query: str,
+    user_token: str,
+    encoder: SentenceTransformer,
+    client: QdrantClient,
+    secret_key: str,
+    k: int = 10,
+) -> list:
+    """Retrieves RBAC-filtered chunks and logs an audit trail to SIEM."""
+    if not query.strip():
+        raise ValueError("query must be non-empty")
+
+    payload = jwt.decode(user_token, secret_key, algorithms=[JWT_ALGORITHM])
+    user_id: str = payload["user_id"]
+    user_roles: list[str] = payload.get("roles", [])
 
     results = client.search(
-        collection_name="documents",
-        query_vector=model.encode(query).tolist(),
+        collection_name=COLLECTION_NAME,
+        query_vector=encoder.encode(query).tolist(),
         query_filter=Filter(must=[FieldCondition(key="roles", match=MatchAny(any=user_roles))]),
         limit=k,
     )
 
     audit_log = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "user_id": user_id, "user_roles": user_roles,
         "query": query, "chunks_returned": len(results),
     }
@@ -630,20 +743,35 @@ def secure_retrieval_with_audit(query: str, user_token: str, k: int = 10):
 Adjust retrieval scores based on metadata to promote authoritative, recent, or contextually relevant documents.
 
 ```python
-def metadata_boosted_search(query: str, documents: list[dict], k: int = 10):
-    base_scores = np.dot(doc_embeddings, model.encode(query))
-    base_scores = (base_scores - base_scores.min()) / (base_scores.max() - base_scores.min() + 1e-8)
+from datetime import datetime, UTC
+
+EPSILON = 1e-8
+RECENCY_BOOST = 0.2
+DAYS_PER_YEAR = 365
+AUTHORITY_BOOST = 1.1
+DEPARTMENT_BOOST = 1.15
+TRUSTED_AUTHORS = frozenset({"legal-team", "compliance-team"})
+
+
+def metadata_boosted_search(
+    query: str,
+    documents: list[dict],
+    doc_embeddings: np.ndarray,
+    encoder: SentenceTransformer,
+    user_department: str,
+    k: int = 10,
+) -> list[dict]:
+    """Applies recency, authority, and department boosts to base retrieval scores."""
+    base_scores = np.dot(doc_embeddings, encoder.encode(query))
+    base_scores = (base_scores - base_scores.min()) / (base_scores.max() - base_scores.min() + EPSILON)
 
     for i, doc in enumerate(documents):
-        # Recency: exponential decay over 1 year, up to +20%
-        age_days = (datetime.utcnow() - datetime.fromisoformat(doc['created_at'])).days
-        base_scores[i] *= (1 + 0.2 * np.exp(-age_days / 365))
-        # Authority: trusted sources +10%
-        if doc.get('author') in ['legal-team', 'compliance-team']:
-            base_scores[i] *= 1.1
-        # Context: match user's department +15%
-        if doc.get('category') == user_context['department']:
-            base_scores[i] *= 1.15
+        age_days = (datetime.now(UTC) - datetime.fromisoformat(doc["created_at"])).days
+        base_scores[i] *= (1 + RECENCY_BOOST * np.exp(-age_days / DAYS_PER_YEAR))
+        if doc.get("author") in TRUSTED_AUTHORS:
+            base_scores[i] *= AUTHORITY_BOOST
+        if doc.get("category") == user_department:
+            base_scores[i] *= DEPARTMENT_BOOST
 
     return [documents[i] for i in np.argsort(base_scores)[::-1][:k]]
 ```
@@ -657,46 +785,56 @@ Introduction and conclusion sections often contain key concepts and summaries. B
 **Lost in the middle**: LLMs exhibit U-shaped performance — >20% drop when relevant information is in the middle of long contexts. This affects both which chunks to retrieve and how to order them for the LLM.
 
 ```python
-# U-shaped boost: first chunk +20%, last chunk +15%, section headers +10%
-# Middle chunks of long docs get slight penalty
-
-# After retrieval, reorder chunks for LLM input:
 def reorder_for_llm(chunks: list[dict]) -> list[dict]:
-    """Place most relevant chunks at start and end, least relevant in middle."""
-    # Even-indexed chunks go to the front, odd-indexed go to the back (reversed)
+    """Places most relevant chunks at start and end to mitigate lost-in-the-middle effect."""
     front = chunks[::2]
     back = chunks[1::2][::-1]
     return front + back
 ```
 
 ```python
-def positional_boosted_search(query: str, documents: list[dict], k: int = 10):
-    base_scores = np.dot(doc_embeddings, model.encode(query))
-    base_scores = (base_scores - base_scores.min()) / (base_scores.max() - base_scores.min() + 1e-8)
+EPSILON = 1e-8
+FIRST_CHUNK_BOOST = 1.2
+LAST_CHUNK_BOOST = 1.15
+HEADER_BOOST = 1.1
+MIDDLE_PENALTY_FACTOR = 0.15
+LONG_DOC_THRESHOLD = 10
+
+SECTION_WEIGHTS: dict[str, dict[str, float]] = {
+    "research_paper": {"abstract": 1.15, "methodology": 1.25, "results": 1.2, "references": 0.8},
+    "technical_doc": {"implementation": 1.3, "api_reference": 1.2, "troubleshooting": 1.15},
+    "legal_doc": {"definitions": 1.3, "requirements": 1.25, "obligations": 1.25, "preamble": 0.9},
+}
+
+
+def positional_boosted_search(
+    query: str,
+    documents: list[dict],
+    doc_embeddings: np.ndarray,
+    encoder: SentenceTransformer,
+    k: int = 10,
+) -> list[dict]:
+    """Boosts retrieval scores based on chunk position within the source document."""
+    base_scores = np.dot(doc_embeddings, encoder.encode(query))
+    base_scores = (base_scores - base_scores.min()) / (base_scores.max() - base_scores.min() + EPSILON)
     boosted_scores = base_scores.copy()
 
     for i, doc in enumerate(documents):
-        chunk_position = doc.get('chunk_index', 0)
-        total_chunks = doc.get('total_chunks', 1)
+        chunk_position = doc.get("chunk_index", 0)
+        total_chunks = doc.get("total_chunks", 1)
 
         if chunk_position == 0:
-            boosted_scores[i] *= 1.2
+            boosted_scores[i] *= FIRST_CHUNK_BOOST
         elif chunk_position == total_chunks - 1:
-            boosted_scores[i] *= 1.15
-        if doc.get('is_section_header', False):
-            boosted_scores[i] *= 1.1
-        if total_chunks > 10:
+            boosted_scores[i] *= LAST_CHUNK_BOOST
+        if doc.get("is_section_header", False):
+            boosted_scores[i] *= HEADER_BOOST
+        if total_chunks > LONG_DOC_THRESHOLD:
             normalized_position = chunk_position / (total_chunks - 1)
-            position_weight = 1 - 0.15 * (1 - 4 * (normalized_position - 0.5) ** 2)
+            position_weight = 1 - MIDDLE_PENALTY_FACTOR * (1 - 4 * (normalized_position - 0.5) ** 2)
             boosted_scores[i] *= position_weight
 
     return [documents[i] for i in np.argsort(boosted_scores)[::-1][:k]]
-
-SECTION_WEIGHTS = {
-    'research_paper': {'abstract': 1.15, 'methodology': 1.25, 'results': 1.2, 'references': 0.8},
-    'technical_doc': {'implementation': 1.3, 'api_reference': 1.2, 'troubleshooting': 1.15},
-    'legal_doc': {'definitions': 1.3, 'requirements': 1.25, 'obligations': 1.25, 'preamble': 0.9},
-}
 ```
 
 Helps for structured documents (papers, reports, technical docs). Hurts for unstructured content (chat logs, transcripts) or queries seeking specific details in middle sections. Store positional metadata during indexing. Combine with reranking: apply positional reordering after cross-encoder, not before — let the reranker score on pure relevance first.
@@ -712,9 +850,18 @@ Queries are not always well-formed. Users ask "it", "more on that", or complex m
 Add synonyms or related terms to increase recall. Use T5 or similar to generate paraphrases, concatenate with original query for retrieval.
 
 ```python
-def expand_query(query: str) -> str:
+MAX_PARAPHRASE_LENGTH = 50
+NUM_PARAPHRASES = 3
+NUM_BEAMS = 5
+
+
+def expand_query(query: str, tokenizer: T5Tokenizer, model: T5ForConditionalGeneration) -> str:
+    """Generates paraphrases and concatenates them with the original query for broader recall."""
     input_ids = tokenizer(f"paraphrase: {query}", return_tensors="pt").input_ids
-    outputs = model.generate(input_ids, max_length=50, num_return_sequences=3, num_beams=5)
+    outputs = model.generate(
+        input_ids, max_length=MAX_PARAPHRASE_LENGTH,
+        num_return_sequences=NUM_PARAPHRASES, num_beams=NUM_BEAMS,
+    )
     paraphrases = [tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
     return query + " " + " ".join(paraphrases)
 ```
@@ -726,8 +873,12 @@ Helps for short/ambiguous queries and domain abbreviations ("ML" → "machine le
 In multi-turn conversations, follow-up queries like "What are its limitations?" lack context. Rewriting reformulates them into standalone questions using chat history.
 
 ```python
-def rewrite_conversational_query(query: str, chat_history: list[dict]) -> str:
-    recent_history = chat_history[-5:]
+HISTORY_WINDOW = 5
+
+
+def rewrite_conversational_query(query: str, chat_history: list[dict[str, str]], llm: LLM) -> str:
+    """Rewrites a follow-up query into a standalone question using recent chat history."""
+    recent_history = chat_history[-HISTORY_WINDOW:]
     history_text = "\n".join([f"{m['role']}: {m['content']}" for m in recent_history])
     prompt = f"""Rewrite the user's latest query into a standalone question.
 
@@ -745,24 +896,40 @@ Standalone query:"""
 **Latency optimization**: Use a smaller, faster model for rewriting (an order of magnitude faster than large models), cache rewritten queries by (query + history hash), or fine-tune a small seq2seq model (e.g., T5-small) for significantly faster rewrites with competitive quality on narrow rewriting tasks.
 
 ```python
-import hashlib, json, re
+import hashlib
+import json
+import re
+
+CONTEXTUAL_REFERENCE_PATTERNS = [
+    r"\b(it|its|this|that|these|those|they|them|their)\b",
+    r"\b(also|too|as well|additionally|furthermore)\b",
+    r"\b(instead|however)\b",
+]
+
 
 def needs_rewriting(query: str) -> bool:
-    patterns = [
-        r'\b(it|its|this|that|these|those|they|them|their)\b',
-        r'\b(also|too|as well|additionally|furthermore)\b',
-        r'\b(instead|however)\b',
-    ]
-    return any(re.search(p, query, re.IGNORECASE) for p in patterns)
+    """Cheap heuristic gate: detects pronouns and contextual references."""
+    return any(re.search(p, query, re.IGNORECASE) for p in CONTEXTUAL_REFERENCE_PATTERNS)
 
-def get_chat_history_hash(chat_history: list[dict]) -> str:
-    return hashlib.md5(json.dumps(chat_history, sort_keys=True).encode()).hexdigest()
 
-def rewrite_with_cache(query: str, chat_history: list[dict], cache: dict) -> str:
-    cache_key = f"{query}:{get_chat_history_hash(chat_history)}"
+def _chat_history_hash(chat_history: list[dict[str, str]]) -> str:
+    """Deterministic hash of chat history for cache keying."""
+    return hashlib.md5(
+        json.dumps(chat_history, sort_keys=True).encode(), usedforsecurity=False
+    ).hexdigest()
+
+
+def rewrite_with_cache(
+    query: str,
+    chat_history: list[dict[str, str]],
+    llm: LLM,
+    cache: dict[str, str],
+) -> str:
+    """Returns cached rewrite if available; otherwise rewrites and caches."""
+    cache_key = f"{query}:{_chat_history_hash(chat_history)}"
     if cache_key in cache:
         return cache[cache_key]
-    rewritten = rewrite_conversational_query(query, chat_history)
+    rewritten = rewrite_conversational_query(query, chat_history, llm)
     cache[cache_key] = rewritten
     return rewritten
 ```
@@ -772,14 +939,26 @@ def rewrite_with_cache(query: str, chat_history: list[dict], cache: dict) -> str
 ```python
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 
-model = T5ForConditionalGeneration.from_pretrained("your-org/t5-query-rewriter")
-tokenizer = T5Tokenizer.from_pretrained("your-org/t5-query-rewriter")
+REWRITER_MODEL = "your-org/t5-query-rewriter"
+HISTORY_WINDOW = 3
+MAX_REWRITE_LENGTH = 100
 
-def rewrite_fast(query: str, chat_history: list[dict]) -> str:
-    history_text = " ".join([msg['content'] for msg in chat_history[-3:]])
-    input_ids = tokenizer(f"rewrite query with context: {history_text} [SEP] {query}", return_tensors="pt").input_ids
-    outputs = model.generate(input_ids, max_length=100)
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+class FastQueryRewriter:
+    """Fine-tuned T5 model for sub-millisecond conversational query rewriting."""
+
+    def __init__(self, model_name: str = REWRITER_MODEL) -> None:
+        self.model = T5ForConditionalGeneration.from_pretrained(model_name)
+        self.tokenizer = T5Tokenizer.from_pretrained(model_name)
+
+    def rewrite(self, query: str, chat_history: list[dict[str, str]]) -> str:
+        """Rewrites a follow-up query into a standalone question using recent context."""
+        history_text = " ".join([msg["content"] for msg in chat_history[-HISTORY_WINDOW:]])
+        input_ids = self.tokenizer(
+            f"rewrite query with context: {history_text} [SEP] {query}", return_tensors="pt"
+        ).input_ids
+        outputs = self.model.generate(input_ids, max_length=MAX_REWRITE_LENGTH)
+        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 ```
 
 **Critical for** chatbot interfaces, multi-turn Q&A, and voice assistants. **Less important for** single-turn search, keyword search, and FAQ systems.
@@ -789,20 +968,26 @@ def rewrite_fast(query: str, chat_history: list[dict]) -> str:
 Break multi-part questions into sub-queries, retrieve separately, merge and rerank with the original query.
 
 ```python
-def decompose_query(query: str) -> list[str]:
+SUB_QUERY_K = 20
+FINAL_K = 5
+
+
+def decompose_query(query: str, llm: LLM) -> list[str]:
+    """Breaks a multi-part question into 2-4 independent sub-queries via LLM."""
     prompt = f"Break this into 2-4 simple sub-questions:\n\nQuestion: {query}\n\nSub-questions:"
     return [q.strip() for q in llm.invoke(prompt).content.split("\n") if q.strip()]
+
 
 # "Compare HIPAA and GDPR for healthcare data" →
 # 1. What are HIPAA's privacy requirements?
 # 2. What are GDPR's privacy requirements?
 # 3. How do they differ for healthcare data?
 
-all_results = {}
-for sub_q in decompose_query(query):
-    for doc_id, score in retrieve(sub_q, documents, k=20):
+all_results: dict[int, float] = {}
+for sub_q in decompose_query(query, llm):
+    for doc_id, score in retrieve(sub_q, documents, k=SUB_QUERY_K):
         all_results[doc_id] = max(all_results.get(doc_id, 0), score)
-top_chunks = rerank(query, list(all_results.keys()), k=5)
+top_chunks = rerank(query, list(all_results.keys()), k=FINAL_K)
 ```
 
 Helps for multi-hop questions ("compare X and Y"). Hurts for simple queries where decomposition adds significant overhead (LLM call for decomposition + multiple retrieval rounds).
@@ -854,12 +1039,15 @@ The LLM receives a structured prompt describing available metadata fields (names
 Generate a hypothetical answer, embed it instead of the raw query. Documents are written as answers — matching answer-to-answer is more effective than matching question-to-answer.
 
 ```python
-def hyde_retrieval(query: str, documents: list[str], k: int = 5):
+def hyde_retrieval(
+    query: str, documents: list[str], encoder: SentenceTransformer, llm: LLM, k: int = 5,
+) -> list[str]:
+    """Generates a hypothetical answer and uses its embedding for retrieval."""
     hypothetical_answer = llm.invoke(
         f'Given the question: "{query}"\nWrite a detailed, factual answer.'
     ).content
-    hyde_embedding = model.encode(hypothetical_answer)
-    similarities = np.dot(model.encode(documents), hyde_embedding)
+    hyde_embedding = encoder.encode(hypothetical_answer)
+    similarities = np.dot(encoder.encode(documents), hyde_embedding)
     return [documents[i] for i in np.argsort(similarities)[::-1][:k]]
 ```
 
@@ -870,18 +1058,26 @@ Helps for complex queries with large semantic gaps between query and document vo
 Generate multiple query variations from different perspectives, retrieve for all, merge with RRF.
 
 ```python
-def multi_query_retrieval(query: str, documents: list[str], k: int = 5):
-    variations = llm.invoke(
-        f"Generate 3 different versions of: {query}"
-    ).content.split("\n")[:3]
+NUM_VARIATIONS = 3
+STAGE1_K = 50
+RRF_K = 60
 
-    doc_embeddings = model.encode(documents)
-    scores = {}
+
+def multi_query_retrieval(
+    query: str, documents: list[str], encoder: SentenceTransformer, llm: LLM, k: int = 5,
+) -> list[str]:
+    """Generates query variations, retrieves for each, and merges via RRF."""
+    variations = llm.invoke(
+        f"Generate {NUM_VARIATIONS} different versions of: {query}"
+    ).content.split("\n")[:NUM_VARIATIONS]
+
+    doc_embeddings = encoder.encode(documents)
+    scores: dict[int, float] = {}
     for q in [query] + variations:
-        sims = np.dot(doc_embeddings, model.encode(q))
-        ranked = np.argsort(sims)[::-1][:50]
+        sims = np.dot(doc_embeddings, encoder.encode(q))
+        ranked = np.argsort(sims)[::-1][:STAGE1_K]
         for rank, idx in enumerate(ranked):
-            scores[idx] = scores.get(idx, 0) + 1 / (60 + rank + 1)
+            scores[idx] = scores.get(idx, 0) + 1 / (RRF_K + rank + 1)
 
     return [documents[i] for i in sorted(scores, key=scores.get, reverse=True)[:k]]
 ```
@@ -893,17 +1089,22 @@ Helps for ambiguous queries and domain-specific terminology variation. Adds one 
 Generate a more general query to retrieve foundational context alongside specific details. Originally proposed for reasoning tasks (Zheng et al., 2023, Google DeepMind), adapted for retrieval by practitioners and frameworks like LangChain.
 
 ```python
-def step_back_retrieval(query: str, documents: list[str], k: int = 10):
+GENERAL_FRACTION = 1 / 3
+
+
+def step_back_retrieval(query: str, documents: list[str], llm: LLM, k: int = 10) -> list:
+    """Retrieves with both the original and a generalized query, then reranks the union."""
     step_back_query = llm.invoke(
         f'Generate a more general question for: "{query}"'
     ).content.strip()
 
     specific = retrieve(query, documents, k=k)
     general = retrieve(step_back_query, documents, k=k)
-    n_specific = k - k // 3
-    seen = set()
-    combined = []
-    for doc_id, score in specific[:n_specific] + general[:k - n_specific]:
+    n_general = int(k * GENERAL_FRACTION)
+    n_specific = k - n_general
+    seen: set[int] = set()
+    combined: list[int] = []
+    for doc_id, score in specific[:n_specific] + general[:n_general]:
         if doc_id not in seen:
             seen.add(doc_id)
             combined.append(doc_id)
@@ -923,9 +1124,19 @@ Query optimization transforms the query before retrieval. Result optimization pr
 Standard retrieval can return 5 chunks discussing the same narrow aspect. MMR balances relevance and diversity: `MMR = lambda * sim(query, chunk) - (1-lambda) * max(sim(chunk, selected_chunks))`.
 
 ```python
-def mmr_rerank(query: str, candidates: list[str], k: int = 5, lambda_param: float = 0.5):
-    query_emb = model.encode(query)
-    cand_embs = model.encode(candidates)
+def mmr_rerank(
+    query: str,
+    candidates: list[str],
+    encoder: SentenceTransformer,
+    k: int = 5,
+    lambda_param: float = 0.5,
+) -> list[str]:
+    """Selects k candidates balancing relevance to query and diversity among selections."""
+    if k > len(candidates):
+        raise ValueError(f"k={k} exceeds candidate count {len(candidates)}")
+
+    query_emb = encoder.encode(query)
+    cand_embs = encoder.encode(candidates)
     relevance = np.dot(cand_embs, query_emb)
 
     selected = [int(np.argmax(relevance))]
@@ -953,41 +1164,59 @@ Not every sentence in a chunk is relevant. Compression filters chunks to keep on
 **Embedding-based filtering** (fast, sub-second on GPU): re-embed sentences, keep those above similarity threshold.
 
 ```python
-def embedding_compress(query: str, chunks: list[str], threshold: float = 0.5) -> list[str]:
-    query_emb = model.encode(query)
+def embedding_compress(
+    query: str, chunks: list[str], encoder: SentenceTransformer, threshold: float = 0.5,
+) -> list[str]:
+    """Keeps only sentences whose embedding similarity to the query exceeds threshold."""
+    query_emb = encoder.encode(query)
     compressed = []
     for chunk in chunks:
-        sentences = chunk.split('. ')
-        relevant = [s for s, sim in zip(sentences, np.dot(model.encode(sentences), query_emb)) if sim >= threshold]
+        sentences = chunk.split(". ")
+        relevant = [
+            s for s, sim in zip(sentences, np.dot(encoder.encode(sentences), query_emb))
+            if sim >= threshold
+        ]
         if relevant:
-            compressed.append('. '.join(relevant))
+            compressed.append(". ".join(relevant))
     return compressed
 ```
 
 **LLM-based extraction** (high quality, one LLM call per chunk): prompt LLM to extract relevant sentences verbatim. Typically ~2-5x compression but expensive at scale.
 
 ```python
-def llm_compress(query: str, chunks: list[str]) -> list[str]:
-    prompt_template = """Extract ONLY sentences relevant to the query. Return empty if none.
+EXTRACTION_PROMPT = """Extract ONLY sentences relevant to the query. Return empty if none.
 Query: {query}
 Chunk: {chunk}
 Relevant sentences:"""
-    return [r for chunk in chunks
-            if (r := llm.invoke(prompt_template.format(query=query, chunk=chunk)).content.strip())]
 
-def pipeline_compress(query: str, chunks: list[str], redundancy_threshold: float = 0.85, relevance_threshold: float = 0.5):
-    query_emb = model.encode(query)
-    all_sentences = [s.strip() for chunk in chunks for s in chunk.split('. ') if s.strip()]
-    sent_embs = model.encode(all_sentences)
 
-    # Remove redundant sentences
-    unique_sents, unique_embs = [], []
+def llm_compress(query: str, chunks: list[str], llm: LLM) -> list[str]:
+    """Extracts query-relevant sentences from each chunk via LLM."""
+    return [
+        r for chunk in chunks
+        if (r := llm.invoke(EXTRACTION_PROMPT.format(query=query, chunk=chunk)).content.strip())
+    ]
+
+
+def pipeline_compress(
+    query: str,
+    chunks: list[str],
+    encoder: SentenceTransformer,
+    redundancy_threshold: float = 0.85,
+    relevance_threshold: float = 0.5,
+) -> list[str]:
+    """Deduplicates sentences by embedding similarity, then filters by query relevance."""
+    query_emb = encoder.encode(query)
+    all_sentences = [s.strip() for chunk in chunks for s in chunk.split(". ") if s.strip()]
+    sent_embs = encoder.encode(all_sentences)
+
+    unique_sents: list[str] = []
+    unique_embs: list[np.ndarray] = []
     for sent, emb in zip(all_sentences, sent_embs):
         if not unique_embs or np.max(np.dot(unique_embs, emb)) < redundancy_threshold:
             unique_sents.append(sent)
             unique_embs.append(emb)
 
-    # Filter by relevance
     scores = np.dot(unique_embs, query_emb)
     return [s for s, score in zip(unique_sents, scores) if score >= relevance_threshold]
 ```
@@ -1014,51 +1243,67 @@ Small chunks match queries precisely but lack context. Large chunks provide cont
 
 ```python
 class SentenceWindowRetriever:
-    def __init__(self, documents: list[str], window_size: int = 3):
+    """Embeds individual sentences and expands to surrounding context at search time."""
+
+    def __init__(self, documents: list[str], encoder: SentenceTransformer, window_size: int = 3) -> None:
         self.window_size = window_size
-        self.sentences, self.metadata = [], []
+        self.encoder = encoder
+        self.sentences: list[str] = []
+        self.metadata: list[dict] = []
         for doc_idx, doc in enumerate(documents):
-            doc_sents = [s.strip() + '.' for s in doc.split('.') if s.strip()]
+            doc_sents = [s.strip() + "." for s in doc.split(".") if s.strip()]
             for sent_idx, sent in enumerate(doc_sents):
                 self.sentences.append(sent)
-                self.metadata.append({'doc_idx': doc_idx, 'sent_idx': sent_idx, 'doc_sents': doc_sents})
-        self.embeddings = model.encode(self.sentences)
+                self.metadata.append({"doc_idx": doc_idx, "sent_idx": sent_idx, "doc_sents": doc_sents})
+        self.embeddings = self.encoder.encode(self.sentences)
 
-    def search(self, query: str, k: int = 5):
-        sims = np.dot(self.embeddings, model.encode(query))
-        windows = []
+    def search(self, query: str, k: int = 5) -> list[dict[str, str]]:
+        """Returns k sentence windows most similar to the query."""
+        sims = np.dot(self.embeddings, self.encoder.encode(query))
+        windows: list[dict[str, str]] = []
         for idx in np.argsort(sims)[::-1][:k]:
             m = self.metadata[idx]
-            start = max(0, m['sent_idx'] - self.window_size)
-            end = min(len(m['doc_sents']), m['sent_idx'] + self.window_size + 1)
-            windows.append({'window': ' '.join(m['doc_sents'][start:end]), 'target': self.sentences[idx]})
+            start = max(0, m["sent_idx"] - self.window_size)
+            end = min(len(m["doc_sents"]), m["sent_idx"] + self.window_size + 1)
+            windows.append({"window": " ".join(m["doc_sents"][start:end]), "target": self.sentences[idx]})
         return windows
 ```
 
 **Auto-merging:**
 
 ```python
-from dataclasses import dataclass
-from typing import List, Optional
+from pydantic import BaseModel
 
-@dataclass
-class HierarchicalNode:
+LEAF_LEVEL = 2
+
+
+class HierarchicalNode(BaseModel):
+    """A node in a parent-intermediate-leaf chunking hierarchy."""
+
     chunk_id: str
     text: str
-    level: int  # 0=parent, 1=intermediate, 2=leaf
-    parent_id: Optional[str]
-    children_ids: List[str]
+    level: int
+    parent_id: str | None
+    children_ids: list[str]
 
-def auto_merge_retrieve(query: str, nodes: dict, k: int = 12, merge_threshold: float = 0.5):
-    leaf_nodes = [n for n in nodes.values() if n.level == 2]
-    leaf_embs = model.encode([n.text for n in leaf_nodes])
-    top_leaves = [leaf_nodes[i] for i in np.argsort(np.dot(leaf_embs, model.encode(query)))[::-1][:k]]
 
-    parent_to_children = {}
+def auto_merge_retrieve(
+    query: str,
+    nodes: dict[str, HierarchicalNode],
+    encoder: SentenceTransformer,
+    k: int = 12,
+    merge_threshold: float = 0.5,
+) -> list[str]:
+    """Retrieves leaf nodes and merges into parent text when enough siblings match."""
+    leaf_nodes = [n for n in nodes.values() if n.level == LEAF_LEVEL]
+    leaf_embs = encoder.encode([n.text for n in leaf_nodes])
+    top_leaves = [leaf_nodes[i] for i in np.argsort(np.dot(leaf_embs, encoder.encode(query)))[::-1][:k]]
+
+    parent_to_children: dict[str | None, list[str]] = {}
     for leaf in top_leaves:
         parent_to_children.setdefault(leaf.parent_id, []).append(leaf.chunk_id)
 
-    final = []
+    final: list[str] = []
     for parent_id, child_ids in parent_to_children.items():
         parent = nodes[parent_id]
         if len(child_ids) / len(parent.children_ids) >= merge_threshold:
@@ -1077,13 +1322,20 @@ Sometimes return entire documents instead of chunks. Short documents (<4K tokens
 **Hybrid approach**: Index small chunks (400 tokens) for precise matching, retrieve and return larger parent chunks (2000 tokens) or full documents to the LLM.
 
 ```python
-# LangChain parent document retriever
+CHILD_CHUNK_SIZE = 400
+CHILD_CHUNK_OVERLAP = 50
+PARENT_CHUNK_SIZE = 2000
+PARENT_CHUNK_OVERLAP = 200
+
 retriever = ParentDocumentRetriever(
     vectorstore=vectorstore, docstore=docstore,
-    child_splitter=RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=400, chunk_overlap=50),
-    parent_splitter=RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=2000, chunk_overlap=200),
+    child_splitter=RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=CHILD_CHUNK_SIZE, chunk_overlap=CHILD_CHUNK_OVERLAP,
+    ),
+    parent_splitter=RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=PARENT_CHUNK_SIZE, chunk_overlap=PARENT_CHUNK_OVERLAP,
+    ),
 )
-# Queries search child chunks but return parent chunks
 ```
 
 | Aspect | Chunk-Level | Document-Level | Parent Document |
@@ -1099,14 +1351,26 @@ retriever = ParentDocumentRetriever(
 Pass metadata to the LLM for attribution. Include source, page, date, author — enough for users to verify. Prompt the LLM to cite sources explicitly ([1], [2]).
 
 ```python
-def retrieve_with_metadata(query: str, k: int = 5):
-    results = client.search(collection_name="documents", query_vector=model.encode(query).tolist(), limit=k)
+COLLECTION_NAME = "documents"
+CITATION_PROMPT = "Answer using only these sources. Cite by number."
+
+
+def retrieve_with_metadata(
+    query: str, encoder: SentenceTransformer, client: QdrantClient, k: int = 5,
+) -> str:
+    """Retrieves chunks with source metadata and formats a citation-ready LLM prompt."""
+    results = client.search(
+        collection_name=COLLECTION_NAME, query_vector=encoder.encode(query).tolist(), limit=k,
+    )
     context = []
     for i, r in enumerate(results):
         m = r.payload
-        context.append(f"[Source {i+1}] {m.get('source','?')} (p.{m.get('page_number','?')}, {m.get('created_at','?')})\n{r.payload['text']}")
+        context.append(
+            f"[Source {i+1}] {m.get('source', '?')} "
+            f"(p.{m.get('page_number', '?')}, {m.get('created_at', '?')})\n{r.payload['text']}"
+        )
     separator = "\n\n"
-    return f"Answer using only these sources. Cite by number.\n\n{separator.join(context)}\n\nQuestion: {query}"
+    return f"{CITATION_PROMPT}\n\n{separator.join(context)}\n\nQuestion: {query}"
 ```
 
 ---
@@ -1118,21 +1382,35 @@ Caching retrieval results by query similarity rather than exact string match is 
 Semantic caching is typically the first routing intercept — check the cache before any retrieval work.
 
 ```python
+DEFAULT_SIMILARITY_THRESHOLD = 0.92
+DEFAULT_TTL_SECONDS = 3600
+
+
 class SemanticCache:
-    def __init__(self, redis_client, encoder, threshold=0.92, ttl=3600):
-        self.redis, self.encoder = redis_client, encoder
-        self.threshold, self.ttl = threshold, ttl
+    """Caches retrieval results keyed by query embedding similarity."""
 
-    def get(self, query: str):
-        query_emb = self.encoder.encode(query)
-        # Compare against all cached query embeddings
-        # Return cached results if similarity >= threshold
-        # Return None on miss
+    def __init__(
+        self, redis_client: Redis, encoder: SentenceTransformer,
+        threshold: float = DEFAULT_SIMILARITY_THRESHOLD, ttl: int = DEFAULT_TTL_SECONDS,
+    ) -> None:
+        self.redis = redis_client
+        self.encoder = encoder
+        self.threshold = threshold
+        self.ttl = ttl
 
-    def set(self, query: str, results: list):
-        # Store query embedding + results with TTL
+    def get(self, query: str) -> list | None:
+        """Returns cached results if a similar query exists, else None."""
+        ...
 
-def retrieve_with_cache(query: str, **kwargs):
+    def set(self, query: str, results: list) -> None:
+        """Stores query embedding and results with TTL."""
+        ...
+
+
+def retrieve_with_cache(
+    query: str, cache: SemanticCache, retriever: HybridRetriever, **kwargs,
+) -> dict[str, list | bool]:
+    """Checks semantic cache before falling back to live retrieval."""
     cached = cache.get(query)
     if cached:
         return {"results": cached, "from_cache": True}
@@ -1142,22 +1420,39 @@ def retrieve_with_cache(query: str, **kwargs):
 ```
 
 ```python
-import redis, hashlib, json
+import hashlib
+import json
+
 import numpy as np
+from redis import Redis
+
+DEFAULT_SIMILARITY_THRESHOLD = 0.92
+DEFAULT_TTL_SECONDS = 3600
+QUERY_ID_LENGTH = 16
+CACHE_INDEX_KEY = "cache:query_index"
+
 
 class SemanticCache:
-    def __init__(self, redis_client, encoder, similarity_threshold=0.92, ttl_seconds=3600):
+    """Redis-backed semantic cache with cosine similarity matching."""
+
+    def __init__(
+        self, redis_client: Redis, encoder: SentenceTransformer,
+        similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+        ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    ) -> None:
         self.redis = redis_client
         self.encoder = encoder
         self.threshold = similarity_threshold
         self.ttl = ttl_seconds
 
-    def _query_id(self, embedding):
-        return hashlib.sha256(embedding.astype(np.float32).tobytes()).hexdigest()[:16]
+    def _query_id(self, embedding: np.ndarray) -> str:
+        """Derives a short deterministic ID from an embedding vector."""
+        return hashlib.sha256(embedding.astype(np.float32).tobytes()).hexdigest()[:QUERY_ID_LENGTH]
 
-    def get(self, query):
+    def get(self, query: str) -> list | None:
+        """Returns cached results for the most similar query, or None on miss."""
         query_emb = self.encoder.encode(query)
-        cached_ids = self.redis.smembers("cache:query_index")
+        cached_ids = self.redis.smembers(CACHE_INDEX_KEY)
         if not cached_ids:
             return None
 
@@ -1166,10 +1461,10 @@ class SemanticCache:
         # or a dedicated vector store for sub-linear lookup.
         max_sim, best_id = -1.0, None
         for qid in cached_ids:
-            qid = qid.decode('utf-8')
+            qid = qid.decode("utf-8")
             cached_emb = json.loads(self.redis.get(f"cache:query:{qid}") or "null")
             if cached_emb is None:
-                self.redis.srem("cache:query_index", qid)  # Clean up expired entries
+                self.redis.srem(CACHE_INDEX_KEY, qid)
                 continue
             sim = np.dot(query_emb, cached_emb) / (np.linalg.norm(query_emb) * np.linalg.norm(cached_emb))
             if sim > max_sim:
@@ -1180,14 +1475,15 @@ class SemanticCache:
             return json.loads(results) if results else None
         return None
 
-    def set(self, query, results):
+    def set(self, query: str, results: list) -> None:
+        """Stores query embedding and results with TTL."""
         emb = self.encoder.encode(query)
         qid = self._query_id(emb)
         # NOTE: These three calls are non-atomic — production code should use
         # a Redis pipeline or transaction to avoid partial state on failure.
         self.redis.setex(f"cache:query:{qid}", self.ttl, json.dumps(emb.tolist()))
         self.redis.setex(f"cache:results:{qid}", self.ttl, json.dumps(results))
-        self.redis.sadd("cache:query_index", qid)
+        self.redis.sadd(CACHE_INDEX_KEY, qid)
 ```
 
 **Threshold tuning**: 0.85-0.90 (higher hit rate, lower precision — narrow/repetitive corpora), 0.90-0.95 (balanced — recommended default), 0.95-0.99 (low hit rate, very high precision — compliance-critical). The right threshold depends on corpus breadth: narrow FAQ corpora tolerate lower thresholds, while broad corpora need higher thresholds to avoid wrong answers. Exact hit-rate and precision numbers vary significantly by query distribution and domain. For false positive management: seed with verified pairs, sample borderline hits for review, optionally validate with cross-encoder.
@@ -1203,11 +1499,15 @@ Retrieval is a pipeline: query processing → stage 1 retrieval → stage 2 rera
 **Simple dense retrieval** (prototype, 20 lines):
 
 ```python
-model = SentenceTransformer('all-mpnet-base-v2')
+ENCODER_MODEL = "all-mpnet-base-v2"
+
+model = SentenceTransformer(ENCODER_MODEL)
 index = faiss.read_index("index.faiss")
 
-def search(query: str, k: int = 5):
-    query_embedding = model.encode(query).reshape(1, -1).astype('float32')
+
+def search(query: str, k: int = 5) -> list[dict[str, str | float]]:
+    """Retrieves k nearest chunks from a FAISS index."""
+    query_embedding = model.encode(query).reshape(1, -1).astype("float32")
     distances, indices = index.search(query_embedding, k=k)
     return [{"chunk": chunks[i], "distance": float(distances[0][j])} for j, i in enumerate(indices[0])]
 ```
@@ -1215,8 +1515,9 @@ def search(query: str, k: int = 5):
 **Two-stage pipeline** (production, significant MRR improvement):
 
 ```python
-def two_stage_search(query: str, stage1_k: int = 50, final_k: int = 5):
-    query_embedding = retriever.encode(query).reshape(1, -1).astype('float32')
+def two_stage_search(query: str, stage1_k: int = 50, final_k: int = 5) -> list[str]:
+    """Fast ANN retrieval followed by cross-encoder reranking."""
+    query_embedding = retriever.encode(query).reshape(1, -1).astype("float32")
     _, indices = index.search(query_embedding, k=stage1_k)
     stage1_chunks = [chunks[i] for i in indices[0]]
 
@@ -1227,26 +1528,36 @@ def two_stage_search(query: str, stage1_k: int = 50, final_k: int = 5):
 **Hybrid with reranking** (production, handles diverse query types):
 
 ```python
+ENCODER_MODEL = "all-mpnet-base-v2"
+RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
+EPSILON = 1e-8
+
+
 class HybridRetriever:
-    def __init__(self, index_path: str, chunks_path: str):
-        self.retriever = SentenceTransformer('all-mpnet-base-v2')
-        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
+    """Two-stage retriever: hybrid dense+sparse search followed by cross-encoder reranking."""
+
+    def __init__(self, index_path: str, chunks_path: str) -> None:
+        self.retriever = SentenceTransformer(ENCODER_MODEL)
+        self.reranker = CrossEncoder(RERANKER_MODEL)
         self.index = faiss.read_index(index_path)
         self.chunks = np.load(chunks_path, allow_pickle=True)
         tokenized_chunks = [chunk.lower().split() for chunk in self.chunks]
         self.bm25 = BM25Okapi(tokenized_chunks)
 
-    def search(self, query: str, stage1_k: int = 100, final_k: int = 5, alpha: float = 0.5):
+    def search(
+        self, query: str, stage1_k: int = 100, final_k: int = 5, alpha: float = 0.5,
+    ) -> list[dict[str, str | float]]:
+        """Runs hybrid retrieval (dense + BM25) then cross-encoder reranking."""
         query_embedding = self.retriever.encode(query)
         dense_distances, dense_indices = self.index.search(
-            query_embedding.reshape(1, -1).astype('float32'), k=stage1_k)
+            query_embedding.reshape(1, -1).astype("float32"), k=stage1_k)
         # FAISS returns squared L2 distances; sqrt converts to true L2 before normalization
         dense_scores = 1 / (1 + np.sqrt(dense_distances[0]))
 
         sparse_scores = self.bm25.get_scores(query.lower().split())
 
-        dense_norm = (dense_scores - dense_scores.min()) / (dense_scores.max() - dense_scores.min() + 1e-8)
-        sparse_norm = (sparse_scores - sparse_scores.min()) / (sparse_scores.max() - sparse_scores.min() + 1e-8)
+        dense_norm = (dense_scores - dense_scores.min()) / (dense_scores.max() - dense_scores.min() + EPSILON)
+        sparse_norm = (sparse_scores - sparse_scores.min()) / (sparse_scores.max() - sparse_scores.min() + EPSILON)
 
         hybrid_scores = np.zeros(len(self.chunks))
         for i, idx in enumerate(dense_indices[0]):
@@ -1264,49 +1575,66 @@ class HybridRetriever:
 **Production pipeline with monitoring:**
 
 ```python
-from dataclasses import dataclass
-import time, logging
+import logging
+import time
+from collections import deque
+
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class RetrievalMetrics:
+METRICS_WINDOW = 1000
+SUMMARY_WINDOW = 100
+MS_PER_SECOND = 1000
+
+
+class RetrievalMetrics(BaseModel):
+    """Latency telemetry for a single retrieval request."""
+
     query: str
     stage1_latency_ms: float
     stage2_latency_ms: float
     total_latency_ms: float
 
-class ProductionRetriever(HybridRetriever):
-    def __init__(self, index_path, chunks_path):
-        super().__init__(index_path, chunks_path)
-        self.metrics_history = []
-        self._embed_cache = {}
 
-    def _embed_query(self, query: str):
+class ProductionRetriever:
+    """Wraps HybridRetriever with query caching, latency tracking, and logging."""
+
+    def __init__(self, index_path: str, chunks_path: str) -> None:
+        self._retriever = HybridRetriever(index_path, chunks_path)
+        self._metrics: deque[RetrievalMetrics] = deque(maxlen=METRICS_WINDOW)
+        self._embed_cache: dict[str, np.ndarray] = {}
+
+    def _embed_query(self, query: str) -> np.ndarray:
         if query not in self._embed_cache:
-            self._embed_cache[query] = self.retriever.encode(query)
+            self._embed_cache[query] = self._retriever.retriever.encode(query)
         return self._embed_cache[query]
 
-    def search(self, query, stage1_k=100, final_k=5, alpha=0.5):
-        start = time.time()
+    def search(
+        self, query: str, stage1_k: int = 100, final_k: int = 5, alpha: float = 0.5,
+    ) -> dict[str, list | dict]:
+        """Runs hybrid retrieval and records latency metrics."""
+        start = time.perf_counter()
 
-        s1_start = time.time()
-        query_embedding = self._embed_query(query)
-        results = super().search(query, stage1_k=stage1_k, final_k=final_k, alpha=alpha)
-        s1_ms = (time.time() - s1_start) * 1000
+        s1_start = time.perf_counter()
+        self._embed_query(query)
+        results = self._retriever.search(query, stage1_k=stage1_k, final_k=final_k, alpha=alpha)
+        s1_ms = (time.perf_counter() - s1_start) * MS_PER_SECOND
 
-        total_ms = (time.time() - start) * 1000
-        self.metrics_history.append(RetrievalMetrics(
+        total_ms = (time.perf_counter() - start) * MS_PER_SECOND
+        self._metrics.append(RetrievalMetrics(
             query=query, stage1_latency_ms=s1_ms,
             stage2_latency_ms=0, total_latency_ms=total_ms))
-        logger.info(f"Retrieved {final_k} chunks in {total_ms:.1f}ms")
+        logger.info("Retrieved %d chunks in %.1fms", final_k, total_ms)
         return {"results": results, "metrics": {"total_latency_ms": total_ms}}
 
-    def get_performance_summary(self):
-        recent = self.metrics_history[-100:]
+    def get_performance_summary(self) -> dict[str, float]:
+        """Returns average and p95 latency over the most recent requests."""
+        recent = list(self._metrics)[-SUMMARY_WINDOW:]
+        latencies = [m.total_latency_ms for m in recent]
         return {
-            "avg_total_latency_ms": np.mean([m.total_latency_ms for m in recent]),
-            "p95_total_latency_ms": np.percentile([m.total_latency_ms for m in recent], 95),
+            "avg_total_latency_ms": float(np.mean(latencies)),
+            "p95_total_latency_ms": float(np.percentile(latencies, 95)),
         }
 ```
 
@@ -1334,21 +1662,29 @@ The entire pipeline described above assumes a fixed DAG: query → rewrite → r
 **Tool-calling agent**: Give the LLM a `search_docs` tool. It queries, reads results, realizes it has a partial answer, formulates a new query for the missing part, and searches again. Implemented in LangGraph, LlamaIndex agents, and most agent frameworks.
 
 ```python
-# Simplified agentic retrieval loop
-tools = [{"name": "search_docs", "fn": lambda q: retriever.search(q, k=5)}]
+MAX_AGENT_ITERATIONS = 5
+RETRIEVAL_K = 5
 
-def agentic_retrieve(question: str, max_iterations: int = 5):
-    messages = [{"role": "user", "content": question}]
+
+def agentic_retrieve(
+    question: str,
+    retriever: HybridRetriever,
+    llm: LLM,
+    max_iterations: int = MAX_AGENT_ITERATIONS,
+) -> str:
+    """Iteratively retrieves documents until the LLM has enough context to answer."""
+    tools = [{"name": "search_docs", "fn": lambda q: retriever.search(q, k=RETRIEVAL_K)}]
+    messages: list[dict[str, str]] = [{"role": "user", "content": question}]
+    response = None
     for _ in range(max_iterations):
         response = llm.invoke(messages, tools=tools)
         messages.append(response.message)
-        if response.tool_calls:
-            for call in response.tool_calls:
-                results = tools[0]["fn"](call.arguments["query"])
-                messages.append({"role": "tool", "content": format_results(results)})
-        else:
-            return response.content  # Agent decided it has enough context
-    return response.content
+        if not response.tool_calls:
+            return response.content
+        for call in response.tool_calls:
+            results = tools[0]["fn"](call.arguments["query"])
+            messages.append({"role": "tool", "content": format_results(results)})
+    return response.content if response else ""
 ```
 
 **Self-RAG** (Asai et al., 2023; ICLR 2024 oral, top 1%): The model generates special reflection tokens — `[Retrieve]` (should I retrieve?), `[IsRel]` (is the retrieved passage relevant?), `[IsSup]` (is the generation supported?), `[IsUse]` (is the response useful?) — enabling adaptive retrieval. The model only retrieves when it determines its knowledge is insufficient, and self-evaluates the quality of retrieved context before generating.
@@ -1453,21 +1789,22 @@ Hand-labeling 500 queries is a major bottleneck. The standard approach: use LLMs
 # Ragas synthetic test generation (API changes across versions — check docs)
 from ragas.testset import TestsetGenerator
 
+TESTSET_SIZE = 200
+QUESTIONS_PER_CHUNK = 2
+
 generator = TestsetGenerator(llm=wrapped_llm)
 testset = generator.generate_with_langchain_docs(
-    documents, testset_size=200,
+    documents, testset_size=TESTSET_SIZE,
     # Query type distribution — class names vary by Ragas version:
     # v0.1: simple, reasoning, multi_context (from ragas.testset.evolutions)
     # v0.2+: SingleHopSpecificQuery, MultiHopAbstractQuery, MultiHopSpecificQuery
 )
 
-# LlamaIndex equivalent
 from llama_index.core.evaluation import generate_question_context_pairs
 
 qa_dataset = generate_question_context_pairs(
-    nodes, llm=llm, num_questions_per_chunk=2
+    nodes, llm=llm, num_questions_per_chunk=QUESTIONS_PER_CHUNK,
 )
-# Returns EmbeddingQAFinetuneDataset with queries, corpus, relevance mappings
 ```
 
 **Automated evaluation frameworks**:

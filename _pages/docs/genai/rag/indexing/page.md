@@ -88,22 +88,34 @@ PDFs are common offenders: text extraction tools often preserve layout artifacts
 
 ```python
 import re
-from marker.converters.pdf import PdfConverter
+
 from marker.config.parser import ConfigParser
+from marker.converters.pdf import PdfConverter
+
+PAGE_NUMBER_PATTERN = r'\b[Pp]age \d+\b'
+PAGE_RANGE_PATTERN = r'\b\d+ of \d+\b'
+CONFIDENTIAL_PATTERN = r'\bCONFIDENTIAL\b'
+COPYRIGHT_PATTERN = r'Copyright © \d{4}.*'
+SEPARATOR_PATTERN = r'[-─=]{3,}'
+WHITESPACE_PATTERN = r'[ \t]+'
+BLANK_LINES_PATTERN = r'\n{3,}'
+
 
 def clean_pdf_text(pdf_path: str) -> str:
+    """Extract text from a PDF and strip common layout artifacts."""
+    assert pdf_path, "pdf_path must be a non-empty string"
     config_parser = ConfigParser({"output_format": "markdown"})
     converter = PdfConverter(config=config_parser.generate_config_dict())
     rendered = converter(pdf_path)
     text = rendered.markdown
 
-    text = re.sub(r'\b[Pp]age \d+\b', '', text)
-    text = re.sub(r'\b\d+ of \d+\b', '', text)
-    text = re.sub(r'\bCONFIDENTIAL\b', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'Copyright © \d{4}.*', '', text)
-    text = re.sub(r'[-─=]{3,}', '', text)
-    text = re.sub(r'[ \t]+', ' ', text)
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(PAGE_NUMBER_PATTERN, '', text)
+    text = re.sub(PAGE_RANGE_PATTERN, '', text)
+    text = re.sub(CONFIDENTIAL_PATTERN, '', text, flags=re.IGNORECASE)
+    text = re.sub(COPYRIGHT_PATTERN, '', text)
+    text = re.sub(SEPARATOR_PATTERN, '', text)
+    text = re.sub(WHITESPACE_PATTERN, ' ', text)
+    text = re.sub(BLANK_LINES_PATTERN, '\n\n', text)
     return text.strip()
 ```
 
@@ -135,6 +147,7 @@ Web pages have navigation, ads, and boilerplate that pollute chunks. Remove nav 
 from trafilatura import fetch_url, extract
 
 def clean_web_page(url: str) -> str:
+    """Extract main content from a web page, stripping boilerplate."""
     downloaded = fetch_url(url)
     return extract(downloaded, include_comments=False, include_tables=True)
 ```
@@ -142,11 +155,17 @@ def clean_web_page(url: str) -> str:
 **Manual alternative** using BeautifulSoup:
 
 ```python
+import re
+
+import requests
 from bs4 import BeautifulSoup
-import requests, re
+
+REQUEST_TIMEOUT_SECONDS = 10
 
 def clean_web_page_manual(url: str) -> str:
-    soup = BeautifulSoup(requests.get(url, timeout=10).content, 'html.parser')
+    """Extract main content from a web page using BeautifulSoup."""
+    assert url, "url must be a non-empty string"
+    soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS).content, 'html.parser')
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
     for element in soup.find_all(['nav', 'header', 'footer', 'aside']):
@@ -168,6 +187,7 @@ These heuristics are corpus-specific examples, not universal defaults. Validate 
 import re
 
 def clean_ocr_text(text: str) -> str:
+    """Normalize whitespace and rejoin hyphenated words in OCR output."""
     text = re.sub(r'[ \t]{2,}', ' ', text)         # collapse multiple spaces
     text = re.sub(r'(\w)-\n(\w)', r'\1\2', text)    # rejoin hyphenated line breaks
     text = re.sub(r'\n{3,}', '\n\n', text)           # collapse blank lines
@@ -200,6 +220,8 @@ Split text every N characters. Baseline for ablation studies only — never use 
 
 ```python
 def character_split(text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
+    """Split text into fixed-size character chunks with overlap."""
+    assert chunk_size > overlap >= 0, "chunk_size must exceed overlap, and overlap must be non-negative"
     chunks, start = [], 0
     while start < len(text):
         chunks.append(text[start:start + chunk_size])
@@ -243,7 +265,6 @@ markdown_splitter = MarkdownHeaderTextSplitter(
     strip_headers=False,
 )
 md_chunks = markdown_splitter.split_text(markdown_document)
-# Each chunk has metadata: {"h1": "Introduction", "h2": "Architecture"}
 ```
 
 Headers signal topic boundaries. Metadata enables filtered search: "find authentication methods in the API section."
@@ -266,10 +287,7 @@ from docling.document_converter import DocumentConverter
 
 converter = DocumentConverter()
 result = converter.convert("document.pdf")
-
-# Preserves tables, sections, and layout hierarchy
 markdown = result.document.export_to_markdown()
-# Split by sections using MarkdownHeaderTextSplitter
 ```
 
 Keeps tables intact, preserves section hierarchy. Use for scientific papers, reports, presentations.
@@ -300,6 +318,8 @@ Use an LLM to decide chunk boundaries. Experimental and expensive ($0.01-0.10 pe
 
 {% raw %}
 ```python
+from langchain.prompts import PromptTemplate
+
 prompt = PromptTemplate.from_template("""
 Split this text into coherent chunks of 300-800 tokens at topic boundaries.
 Each chunk must be self-contained. Output JSON: [{{"chunk_text": "...", "summary": "..."}}]
@@ -416,7 +436,6 @@ Metadata transforms retrieval from "find similar text" to "find the right text f
 Store metadata as flat key-value pairs, not nested objects. Vector databases index flat fields efficiently but struggle with nested structures.
 
 ```python
-# Good: Flat metadata
 metadata = {
     "source": "handbook.pdf",
     "doc_type": "pdf",
@@ -429,6 +448,11 @@ metadata = {
 **Full metadata attachment example**:
 
 ```python
+import hashlib
+from datetime import datetime, timezone
+
+from qdrant_client.models import PointStruct
+
 chunks = splitter.split_text(document_text)
 embeddings = model.encode(chunks)
 
@@ -450,7 +474,7 @@ for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
         "page_number": extract_page(chunk),
         "word_count": len(chunk.split()),
         "embedding_model": "all-mpnet-base-v2",
-        "indexed_at": datetime.utcnow().isoformat(),
+        "indexed_at": datetime.now(timezone.utc).isoformat(),
         "doc_hash": hashlib.sha256(document_text.encode()).hexdigest(),
     }
 
@@ -469,7 +493,8 @@ Chunks often lack context about where they came from. "Nike has committed to red
 **How it works**: Parse document structure, prepend context header (title + section hierarchy) to each chunk before embedding. Store both contextualized text (for embedding/search) and original text (for LLM generation).
 
 ```python
-def create_contextual_chunks(document: str, doc_title: str, chunk_size: int = 500):
+def create_contextual_chunks(document: str, doc_title: str, chunk_size: int = 500) -> list[dict]:
+    """Prepend document and section context to each chunk before embedding."""
     sections = extract_document_structure(document, doc_title)
     all_chunks = []
 
@@ -478,8 +503,8 @@ def create_contextual_chunks(document: str, doc_title: str, chunk_size: int = 50
         for i, chunk in enumerate(chunks):
             context_header = f"Document: {doc_title}\nSection: {section_header}\n\n"
             all_chunks.append({
-                'contextualized': context_header + chunk,  # Embed this
-                'original': chunk,                          # Return this to LLM
+                'text_for_embedding': context_header + chunk,
+                'text_for_generation': chunk,
                 'metadata': {'doc_title': doc_title, 'section': section_header, 'chunk_index': i}
             })
     return all_chunks
@@ -519,8 +544,8 @@ doc_title = "Nike Climate Impact Report 2025"
 document_text = load_document("nike_climate_report.md")
 chunks = create_contextual_chunks(document_text, doc_title, chunk_size=500)
 
-contextualized_texts = [chunk['contextualized'] for chunk in chunks]
-embeddings = model.encode(contextualized_texts)
+texts_for_embedding = [chunk['text_for_embedding'] for chunk in chunks]
+embeddings = model.encode(texts_for_embedding)
 
 for chunk, embedding in zip(chunks, embeddings):
     client.upsert(
@@ -529,8 +554,8 @@ for chunk, embedding in zip(chunks, embeddings):
             id=chunk['metadata']['chunk_index'],
             vector=embedding.tolist(),
             payload={
-                'contextualized_text': chunk['contextualized'],
-                'original_text': chunk['original'],
+                'text_for_embedding': chunk['text_for_embedding'],
+                'text_for_generation': chunk['text_for_generation'],
                 'doc_title': chunk['metadata']['doc_title'],
                 'section': chunk['metadata']['section'],
                 'chunk_index': chunk['metadata']['chunk_index'],
@@ -538,18 +563,15 @@ for chunk, embedding in zip(chunks, embeddings):
         )]
     )
 
-# At retrieval time: search uses contextualized embeddings, LLM receives original_text
 query_results = client.search(collection_name="documents", query_vector=query_embedding, limit=5)
-llm_context = [result.payload['original_text'] for result in query_results]
+llm_context = [result.payload['text_for_generation'] for result in query_results]
 ```
 
 **Optimization**: Use abbreviated headers for frequently repeated metadata:
 
 ```python
-# Standard (50 tokens)
 "Document: Nike Climate Impact Report 2025\nSection: Environmental Commitments\n\n"
 
-# Abbreviated (20 tokens)
 "Doc: Nike Climate 2025 | Env Commitments\n\n"
 ```
 
@@ -571,8 +593,10 @@ You've chunked and embedded. Now you need a database optimized for "find the 5 c
 import faiss
 import numpy as np
 
-dimension = 1536
-index = faiss.IndexHNSWFlat(dimension, 32)
+EMBEDDING_DIM = 1536
+HNSW_M = 32
+
+index = faiss.IndexHNSWFlat(EMBEDDING_DIM, HNSW_M)
 index.add(embeddings)
 distances, indices = index.search(query_embedding[np.newaxis, :], k=5)
 ```
@@ -583,10 +607,13 @@ distances, indices = index.search(query_embedding[np.newaxis, :], k=5)
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
-client = QdrantClient("localhost", port=6333)
+EMBEDDING_DIM = 1536
+QDRANT_PORT = 6333
+
+client = QdrantClient("localhost", port=QDRANT_PORT)
 client.create_collection(
     collection_name="documents",
-    vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+    vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
 )
 client.upsert(collection_name="documents", points=points)
 results = client.search(collection_name="documents", query_vector=query_embedding.tolist(), limit=5)
@@ -626,7 +653,10 @@ The real goal is retrieval quality (did we find the right chunk?) and generation
 **Chunk coherence**: Embed each sentence in a chunk, compute pairwise cosine similarity. High similarity = coherent. Target >0.7.
 
 ```python
+from sklearn.metrics.pairwise import cosine_similarity
+
 def chunk_coherence(chunk: str) -> float:
+    """Compute average pairwise cosine similarity of sentence embeddings within a chunk."""
     sentences = chunk.split('. ')
     if len(sentences) < 2:
         return 1.0
@@ -678,14 +708,18 @@ Recursive (500 tokens, 20% overlap) wins. Semantic chunking adds 3% Hit Rate at 
 Get documents indexed and searchable in <50 lines.
 
 ```python
+import faiss
+import numpy as np
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
-import faiss, numpy as np
+
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 100
 
 documents = ["RAG stands for Retrieval-Augmented Generation...", "..."]
 
 splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    encoding_name="cl100k_base", chunk_size=500, chunk_overlap=100
+    encoding_name="cl100k_base", chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
 )
 chunks = splitter.split_text("\n\n".join(documents))
 
@@ -704,32 +738,52 @@ Exact search (IndexFlatL2) is fine for <10K chunks. No optimization, no metadata
 Production adds metadata tracking, incremental updates, ANN indexes, error handling, and monitoring.
 
 ```python
+import hashlib
+import logging
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from qdrant_client import QdrantClient
+from qdrant_client.models import PointStruct
+from sentence_transformers import SentenceTransformer
+
+logger = logging.getLogger(__name__)
+
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 100
+QDRANT_PORT = 6333
+POINT_ID_MODULUS = 2**63
+
+
 class ProductionIndexer:
-    def __init__(self, collection_name="documents"):
+    """Chunk, embed, and upsert documents into a Qdrant collection with idempotency."""
+
+    def __init__(self, collection_name: str = "documents"):
         self.splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            encoding_name="cl100k_base", chunk_size=500, chunk_overlap=100
+            encoding_name="cl100k_base", chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
         self.model = SentenceTransformer('all-mpnet-base-v2')
-        self.client = QdrantClient("localhost", port=6333)
+        self.client = QdrantClient("localhost", port=QDRANT_PORT)
         self.collection_name = collection_name
 
     def split(self, source: str, metadata: dict) -> list[str]:
+        """Split source text into chunks using the default recursive splitter."""
         return self.splitter.split_text(source)
 
     def index_document(self, doc_id: str, text: str, metadata: dict) -> int:
+        """Index a single document, skipping unchanged content and replacing stale chunks."""
         doc_hash = hashlib.sha256(text.encode()).hexdigest()
 
-        # Skip if unchanged (idempotency)
         existing = self.client.scroll(
             collection_name=self.collection_name,
             scroll_filter={"must": [{"key": "doc_id", "match": {"value": doc_id}}]},
             limit=1,
         )
         if existing[0] and existing[0][0].payload.get("doc_hash") == doc_hash:
+            logger.debug("Document %s unchanged, skipping", doc_id)
             return 0
 
-        # Delete old chunks, create new ones
         if existing[0]:
+            logger.info("Replacing stale chunks for document %s", doc_id)
             self.client.delete(
                 collection_name=self.collection_name,
                 points_selector={"filter": {"must": [{"key": "doc_id", "match": {"value": doc_id}}]}},
@@ -739,13 +793,14 @@ class ProductionIndexer:
         embeddings = self.model.encode(chunks)
         points = [
             PointStruct(
-                id=int(hashlib.sha256(f"{doc_id}-{i}".encode()).hexdigest()[:16], 16) % (2**63),
+                id=int(hashlib.sha256(f"{doc_id}-{i}".encode()).hexdigest()[:16], 16) % POINT_ID_MODULUS,
                 vector=emb.tolist(),
                 payload={"doc_id": doc_id, "doc_hash": doc_hash, "chunk_index": i, "text": chunk, **metadata},
             )
             for i, (chunk, emb) in enumerate(zip(chunks, embeddings))
         ]
         self.client.upsert(collection_name=self.collection_name, points=points)
+        logger.info("Indexed %d chunks for document %s", len(chunks), doc_id)
         return len(chunks)
 ```
 
@@ -753,47 +808,59 @@ class ProductionIndexer:
 
 ```python
 def index_batch(self, documents: list[dict]) -> dict:
+    """Index multiple documents, collecting per-batch statistics."""
     stats = {"total_docs": len(documents), "total_chunks": 0, "failed": 0}
     for doc in documents:
         try:
             chunks = self.index_document(doc["doc_id"], doc["text"], doc.get("metadata", {}))
             stats["total_chunks"] += chunks
-        except Exception as e:
+        except (ConnectionError, ValueError, KeyError) as e:
             stats["failed"] += 1
-            logger.error(f"Document {doc.get('doc_id')} failed: {e}")
+            logger.error("Document %s failed: %s", doc.get("doc_id"), e)
     return stats
 ```
 
 **Multi-document type indexer**: Route to appropriate splitters based on document type.
 
 ```python
-class MultiTypeIndexer(ProductionIndexer):
-    def __init__(self, collection_name="documents"):
-        super().__init__(collection_name)
+try:
+    from docling.document_converter import DocumentConverter
+except ImportError:
+    DocumentConverter = None
+
+CODE_CHUNK_SIZE = 1000
+CODE_CHUNK_OVERLAP = 200
+
+
+class MultiTypeIndexer:
+    """Route documents to format-specific splitters, delegating indexing to ProductionIndexer."""
+
+    def __init__(self, collection_name: str = "documents"):
+        self.indexer = ProductionIndexer(collection_name)
         self.markdown_splitter = MarkdownHeaderTextSplitter(
             headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
             strip_headers=False,
         )
         self.code_splitter = RecursiveCharacterTextSplitter.from_language(
-            language="python", chunk_size=1000, chunk_overlap=200,
+            language="python", chunk_size=CODE_CHUNK_SIZE, chunk_overlap=CODE_CHUNK_OVERLAP,
         )
 
     def split(self, source: str, metadata: dict) -> list[str]:
+        """Split source text using a format-specific strategy based on doc_type metadata."""
         doc_type = metadata.get("doc_type", "text")
         if doc_type == "markdown":
             return [chunk.page_content if hasattr(chunk, 'page_content') else str(chunk)
                     for chunk in self.markdown_splitter.split_text(source)]
-        elif doc_type == "code":
+        if doc_type == "code":
             return self.code_splitter.split_text(source)
-        elif doc_type == "pdf":
-            from docling.document_converter import DocumentConverter
+        if doc_type == "pdf":
+            assert DocumentConverter is not None, "docling is required for PDF splitting"
             converter = DocumentConverter()
             result = converter.convert(source)
             markdown = result.document.export_to_markdown()
             return [chunk.page_content if hasattr(chunk, 'page_content') else str(chunk)
                     for chunk in self.markdown_splitter.split_text(markdown)]
-        else:
-            return self.splitter.split_text(source)
+        return self.indexer.split(source, metadata)
 ```
 
 Type-specific splitting prevents splitting mid-table (PDF), mid-function (code), or losing header context (markdown). Tag chunks with `doc_type` for type filtering at retrieval time.
